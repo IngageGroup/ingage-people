@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* Colors, type, spacing and fonts come from @ingagegroup/ingage-design-tokens (imported in
+   layout.tsx). This file only adds what the tokens don't cover. */
+:root {
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --success: #1c7a54;
+  --success-subtle: rgba(34, 160, 110, 0.12);
+  --error-subtle: rgba(225, 69, 79, 0.08);
+}
+
+body {
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--link);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+

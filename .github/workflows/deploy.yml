@@ -1,0 +1,128 @@
+name: Deploy
+
+# Builds the image once, deploys it to dev, then (after approval in the "prod" GitHub
+# environment) pushes the same image to the prod registry and deploys it there.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: bench-web-template
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read # @ingagegroup/* packages, passed to docker build as a secret
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          docker build --secret id=node_auth_token,env=NODE_AUTH_TOKEN -t "$IMAGE_NAME:$SHA" .
+          docker save "$IMAGE_NAME:$SHA" | gzip > image.tar.gz
+
+      - name: Upload image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: image
+          path: image.tar.gz
+          retention-days: 7
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      id-token: write # OIDC login to Azure
+      contents: read
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CONTAINER_APP: ${{ vars.CONTAINER_APP }}
+      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Download image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: image
+
+      - name: Load image
+        run: gunzip -c image.tar.gz | docker load
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906  # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push image to ACR
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker tag "$IMAGE_NAME:$SHA" "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"
+          docker push "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"
+
+      - name: Deploy to Container App
+        run: |
+          az containerapp update \
+            --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"
+
+  deploy-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: prod
+    permissions:
+      id-token: write # OIDC login to Azure
+      contents: read
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CONTAINER_APP: ${{ vars.CONTAINER_APP }}
+      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Download image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: image
+
+      - name: Load image
+        run: gunzip -c image.tar.gz | docker load
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906  # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push image to ACR
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker tag "$IMAGE_NAME:$SHA" "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"
+          docker push "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"
+
+      - name: Deploy to Container App
+        run: |
+          az containerapp update \
+            --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME:$SHA"

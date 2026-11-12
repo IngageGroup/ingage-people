@@ -1,0 +1,10 @@
+minimumReleaseAge: 1440
+onlyBuiltDependencies:
+  - sharp
+# Their install scripts only verify or download binaries already provided by optional deps.
+ignoredBuiltDependencies:
+  - esbuild
+  - protobufjs
+# drizzle-kit's @esbuild-kit loader pins esbuild <=0.24, affected by GHSA-67mh-4wv8-2f99.
+overrides:
+  "@esbuild-kit/core-utils>esbuild": "0.25.12"
