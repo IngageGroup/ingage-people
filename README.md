@@ -134,6 +134,11 @@ for `@ingagegroup/*`, and pnpm warns that it can't read `.npmrc`.
 **Auth bypass.** `E2E_AUTH_BYPASS=true` signs you in as `e2e@example.com` without Entra. It
 only works when `NODE_ENV` is not `production`, so it can't switch on in a deployed app.
 
+**Postgres image.** Compose and CI use `pgvector/pgvector` (Postgres 17, matching Azure)
+so migrations can enable the `vector` extension. If your `postgres-data` volume was created
+by the older `postgres:*-alpine` image, recreate it with `docker compose down -v` (this
+deletes local data), then `docker compose up -d` and `pnpm db:migrate`.
+
 **Changing the schema.** Edit `src/db/schema.ts`, run `pnpm db:generate` to write a new SQL
 migration into `drizzle/`, review it, and commit it. Deployed containers apply pending
 migrations at startup (section 8.10).
@@ -324,6 +329,12 @@ az postgres flexible-server create -g "$RG" -n "$PG" -l "$LOCATION" \
 
 az postgres flexible-server db create -g "$RG" --server-name "$PG" --name "$APPNAME"
 
+# Allowlist pgvector. The app's migrations run CREATE EXTENSION vector at startup and fail
+# until it is listed. azure.extensions is the whole list, so include anything else you use
+# (e.g. --value VECTOR,PG_TRGM).
+az postgres flexible-server parameter set -g "$RG" --server-name "$PG" \
+  --name azure.extensions --value VECTOR
+
 # Let your machine connect (needed for the next step; remove it afterwards if you like)
 MY_IP=$(curl -s https://api.ipify.org)
 az postgres flexible-server firewall-rule create -g "$RG" --server-name "$PG" \
@@ -331,7 +342,13 @@ az postgres flexible-server firewall-rule create -g "$RG" --server-name "$PG" \
 ```
 
 Create the managed identity as a database role. Then let it create tables, because the app
-runs its own migrations at startup.
+runs its own migrations at startup. It isn't an admin, and pgvector isn't a trusted extension,
+so you create `vector` here as the Entra admin. The app's migration then finds it already
+installed and skips it. Without this step, startup fails with
+`permission denied to create extension "vector"`.
+
+**Existing servers** (created before pgvector): run the `azure.extensions` command above and
+the `CREATE EXTENSION` line below before deploying the pgvector migration.
 
 ```bash
 PGHOST="$PG.postgres.database.azure.com"
@@ -342,7 +359,8 @@ psql "host=$PGHOST dbname=postgres user=$ME_UPN sslmode=require" -c \
 
 psql "host=$PGHOST dbname=$APPNAME user=$ME_UPN sslmode=require" \
   -c "GRANT ALL ON DATABASE \"$APPNAME\" TO \"$ID\";" \
-  -c "GRANT ALL ON SCHEMA public TO \"$ID\";"
+  -c "GRANT ALL ON SCHEMA public TO \"$ID\";" \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 unset PGPASSWORD
 # Optional: az postgres flexible-server firewall-rule delete -g "$RG" --server-name "$PG" --name developer --yes
