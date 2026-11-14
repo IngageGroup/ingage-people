@@ -1,16 +1,16 @@
 import PageHeader from "@/components/PageHeader";
-import NotesPanel from "./NotesPanel";
+import ChatPanel from "./ChatPanel";
 
-export default function WelcomePage() {
+export default function ChatPage() {
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-10">
-      <PageHeader title="Welcome">
-        This app was created from the Ingage bench web template. It comes with Microsoft Entra
-        sign-in, the Ingage design system, Postgres through Drizzle, unit and end-to-end tests, and
-        CI/CD to Azure. The README explains how to rename it, run it locally and deploy it. The
-        notes below are a working example of a database-backed feature to copy or delete.
+    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
+      <PageHeader title="Ask a Question">
+        Get answers about Ingage policies and benefits, with a link to the handbook section each
+        answer comes from.
       </PageHeader>
-      <NotesPanel />
-    </main>
+      <div className="flex-1">
+        <ChatPanel />
+      </div>
+    </div>
   );
 }

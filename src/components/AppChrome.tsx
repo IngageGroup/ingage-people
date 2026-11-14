@@ -7,7 +7,14 @@ import { APP_NAME } from "@/lib/app-config";
 
 const HOME = "/";
 
-const SECTIONS: SidebarSection[] = [{ items: [{ id: "/", label: "Welcome", icon: "rocket" }] }];
+const SECTIONS: SidebarSection[] = [
+  {
+    items: [
+      { id: "/", label: "Ask", icon: "ai-brain" },
+      { id: "/notes", label: "Notes Sample", icon: "database" },
+    ],
+  },
+];
 
 /** AppShell + AppHeader + Sidebar around every page except the bare /auth/* pages. */
 export default function AppChrome({ children }: { children: React.ReactNode }) {

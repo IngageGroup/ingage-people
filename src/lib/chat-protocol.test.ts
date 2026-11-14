@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type ChatEvent, ChatStreamError, encodeChatEvent, readChatStream } from "@/lib/chat-protocol";
+import {
+  type ChatEvent,
+  ChatStreamError,
+  encodeChatEvent,
+  readChatStream,
+} from "@/lib/chat-protocol";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();

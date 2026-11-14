@@ -66,7 +66,8 @@ export class ChatStreamError extends Error {
  * malformed line, an `error` event, or a stream that ends without `done`.
  */
 export async function* readChatStream(body: ReadableStream<Uint8Array>): AsyncGenerator<ChatEvent> {
-  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
   let buffer = "";
   let finished = false;
 
@@ -89,6 +90,7 @@ export async function* readChatStream(body: ReadableStream<Uint8Array>): AsyncGe
     while (!finished) {
       const { value, done } = await reader.read();
       if (done) {
+        buffer += decoder.decode();
         if (buffer.trim()) {
           const event = parseLine(buffer);
           if (event.type === "done") finished = true;
@@ -96,7 +98,7 @@ export async function* readChatStream(body: ReadableStream<Uint8Array>): AsyncGe
         }
         break;
       }
-      buffer += value;
+      buffer += decoder.decode(value, { stream: true });
       let newline = buffer.indexOf("\n");
       while (newline !== -1) {
         const line = buffer.slice(0, newline);

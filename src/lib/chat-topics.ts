@@ -8,7 +8,7 @@ export const CHAT_TOPICS: ChatTopic[] = [
   {
     id: "handbook",
     label: "Employee Handbook",
-    description: "Benefits, PTO, training budget, reviews, and other Ingage policies.",
+    description: "benefits, PTO, training budget, reviews, and other Ingage policies.",
   },
 ];
 
