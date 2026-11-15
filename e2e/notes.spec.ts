@@ -7,12 +7,12 @@ test.describe("Notes sample", () => {
   });
 
   test("shows the empty state when there are no notes", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/notes");
     await expect(page.getByText("No notes yet")).toBeVisible();
   });
 
   test("adds a note owned by the signed-in user", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/notes");
     await page.getByLabel("Title").fill("Buy milk");
     await page.getByRole("button", { name: "Add Note" }).click();
     await expect(page.getByText("Buy milk")).toBeVisible();
@@ -22,7 +22,7 @@ test.describe("Notes sample", () => {
   });
 
   test("shows a validation error for an empty title", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/notes");
     await expect(page.getByText("No notes yet")).toBeVisible();
     await page.getByRole("button", { name: "Add Note" }).click();
     await expect(page.getByText("Title is required")).toBeVisible();
@@ -35,7 +35,7 @@ test.describe("Notes sample", () => {
         ? route.fulfill({ status: 500, contentType: "application/json", body: "{}" })
         : route.continue(),
     );
-    await page.goto("/");
+    await page.goto("/notes");
     await expect(page.getByText("Could not load notes.")).toBeVisible();
     await expect(page.getByText("No notes yet")).toBeHidden();
   });

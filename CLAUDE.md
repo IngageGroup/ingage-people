@@ -2,8 +2,9 @@
 
 ## Project Overview
 
-Next.js app created from the Ingage **bench web template**. Signed-in users land on a Welcome
-page inside the Ingage AppShell with a Postgres-backed **Notes** sample (`/`). Everything
+Next.js app created from the Ingage **bench web template**. Signed-in users land on the chat
+page (`/`) inside the Ingage AppShell; the template's Postgres-backed **Notes** sample is at
+`/notes` until #18 removes it. Everything
 except the sign-in page, the auth API, `/api/health`, and static assets requires Microsoft
 Entra sign-in, restricted to `ALLOWED_EMAIL_DOMAIN`.
 
@@ -46,9 +47,10 @@ src/
 │   ├── api/health/route.ts              # DB ping with 5 s cap; public; used by probes
 │   ├── auth/signin/page.tsx             # Sign-in card (no AppShell)
 │   ├── layout.tsx                       # Token CSS + SessionProvider + AppChrome
-│   ├── page.tsx                         # Welcome page
-│   └── NotesPanel.tsx                   # Notes form + table (client)
-├── components/                          # AppChrome, PageHeader, EmptyState
+│   ├── page.tsx                         # Chat page (/)
+│   ├── ChatPanel.tsx                    # Chat state, /api/chat streaming, empty/error states (client)
+│   └── notes/                           # Notes sample at /notes (removed in #18)
+├── components/                          # AppChrome, PageHeader, EmptyState, CitationList
 ├── db/
 │   ├── schema.ts                        # Drizzle tables
 │   ├── config.ts                        # Connection mode selection + Entra token provider
@@ -57,6 +59,9 @@ src/
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
+│   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
+│   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
+│   ├── chat-topics.ts                   # Topics + example questions for the empty state
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
@@ -122,6 +127,10 @@ Use the Ingage components before writing custom markup.
   `instrumentation-node.ts` runs `runMigrations()` before the server takes traffic, holding
   a Postgres advisory lock so replicas don't race. On failure it logs
   `[migrate] failed; exiting` and exits 1. The Dockerfile copies `drizzle/` into the image.
+- **Chat wire format (`src/lib/chat-protocol.ts`):** `/api/chat` streams NDJSON events
+  (`delta`, `citation`, then one `done`, or one `error`). Failures before streaming are plain
+  JSON `{ error, correlationId }`. The UI keeps the conversation in React state only (no
+  `localStorage`) and sends at most `CHAT_HISTORY_MAX_TURNS` earlier turns.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.
