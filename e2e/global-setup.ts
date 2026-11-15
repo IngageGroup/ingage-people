@@ -1,6 +1,6 @@
 import { chromium, type FullConfig } from "@playwright/test";
 
-const WARM_PATHS = ["/", "/notes", "/auth/signin"];
+const WARM_PATHS = ["/", "/auth/signin"];
 
 /**
  * `next dev` compiles each route on first request and reloads open pages while it

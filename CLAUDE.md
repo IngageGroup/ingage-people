@@ -2,14 +2,13 @@
 
 ## Project Overview
 
-Next.js app created from the Ingage **bench web template**. Signed-in users land on the chat
-page (`/`) inside the Ingage AppShell; the template's Postgres-backed **Notes** sample is at
-`/notes` until #18 removes it. Everything
-except the sign-in page, the auth API, `/api/health`, and static assets requires Microsoft
-Entra sign-in, restricted to `ALLOWED_EMAIL_DOMAIN`.
+Ingage People: an internal chat where employees ask about working at Ingage and get answers
+from the Employee Handbook with citations. Signed-in users land on the chat page (`/`) inside
+the Ingage AppShell. Everything except the sign-in page, the auth API, `/api/health`, and
+static assets requires Microsoft Entra sign-in, restricted to `ALLOWED_EMAIL_DOMAIN`.
 
-The Notes feature is the reference pattern for a database-backed feature: schema → query
-module → Zod-validated route → client component → unit + E2E tests.
+The app started from the Ingage bench web template. Design:
+`docs/superpowers/specs/2026-11-12-internal-knowledge-chat-design.md`.
 
 ## Setup
 
@@ -43,26 +42,23 @@ The README covers Azure provisioning, CI/CD, and renaming.
 src/
 ├── app/
 │   ├── api/auth/[...nextauth]/route.ts  # Auth.js handlers
-│   ├── api/notes/route.ts               # GET list, POST create (Zod, created_by from session)
 │   ├── api/health/route.ts              # DB ping with 5 s cap; public; used by probes
 │   ├── api/chat/route.ts                # POST: passages → Claude → NDJSON stream
 │   ├── auth/signin/page.tsx             # Sign-in card (no AppShell)
 │   ├── layout.tsx                       # Token CSS + SessionProvider + AppChrome
 │   ├── page.tsx                         # Chat page (/)
-│   ├── ChatPanel.tsx                    # Chat state, /api/chat streaming, empty/error states (client)
-│   └── notes/                           # Notes sample at /notes (removed in #18)
+│   └── ChatPanel.tsx                    # Chat state, /api/chat streaming, empty/error states (client)
 ├── components/                          # AppChrome, PageHeader, EmptyState, CitationList
 ├── db/
 │   ├── schema.ts                        # Drizzle tables
 │   ├── config.ts                        # Connection mode selection + Entra token provider
 │   ├── index.ts                         # Lazy pool/db, pingDb
-│   ├── notes.ts                         # Notes queries
 │   ├── knowledge.ts                     # Knowledge sources: atomic version swap, active version
 │   ├── search.ts                        # keywordSearch (FTS) + vectorSearch (pgvector) per topic
 │   ├── rate-limit.ts                    # Per-user chat quota (chat_usage counters)
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
-│   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
+│   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION
 │   ├── chat/answer.ts                   # streamAnswer: Claude call, [pN] markers → citations
 │   ├── chat/markers.ts                  # Strips [pN] markers from streamed text, even split
 │   ├── chat/passages.ts                 # Passage type, PassageProvider, dev Markdown provider
@@ -123,7 +119,7 @@ Use the Ingage components before writing custom markup.
 
 **Library gotchas (ingage-react 0.1.1):**
 - `Button`, `Tabs`, and `LeftMenuItem` render `<button>` without `type`, so inside a `<form>`
-  they submit it. `NotesPanel` uses no `<form>`; Enter in the input triggers the add instead.
+  they submit it. `ChatPanel` uses no `<form>`; Enter in the textarea sends instead.
 - `Input` only links its `<label>` to the field when you pass `id` (use `useId()`).
 - `AppHeader` hides the app name on narrow screens.
 - `TableListHeading`/`TableListLine` are CSS grids, not `<table>`; pass the same column
@@ -196,7 +192,7 @@ Use the Ingage components before writing custom markup.
   id; upstream messages are dropped. Throw `SafeError` when the message helps operators and
   holds no user content. Create Claude clients for chat with `chatClient()` (log level pinned
   to "warn"). Azure Monitor options live in `src/lib/telemetry.ts` (no Postgres parameter
-  values, no console capture). Manual check: README 12.1.
+  values, no console capture). Manual check: README 10.1.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.

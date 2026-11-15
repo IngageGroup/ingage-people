@@ -11,18 +11,8 @@ import {
   text,
   timestamp,
   uuid,
-  varchar,
   vector,
 } from "drizzle-orm/pg-core";
-
-export const notes = pgTable("notes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  title: varchar("title", { length: 200 }).notNull(),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export type Note = typeof notes.$inferSelect;
 
 /** Voyage 4 models' default size. All Voyage 4 models share one embedding space. */
 export const EMBEDDING_DIMENSIONS = 1024;

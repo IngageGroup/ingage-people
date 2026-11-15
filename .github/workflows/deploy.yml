@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: bench-web-template
+  IMAGE_NAME: ingage-people
 
 jobs:
   build:

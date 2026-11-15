@@ -1,106 +1,38 @@
-# Bench Web Template
+# Ingage People
 
-Starting point for Ingage bench web applications: a Next.js app with Microsoft Entra sign-in,
-the Ingage design system, Postgres through Drizzle, unit and end-to-end tests, and CI/CD to
-Azure Container Apps with separate dev and prod environments.
+Internal chat where Ingage employees ask questions about working at Ingage and get answers
+from the Employee Handbook, with citations. A Next.js app with Microsoft Entra sign-in, the
+Ingage design system, Postgres (pgvector) through Drizzle, Claude for answers, Voyage for
+embeddings and re-ranking, and CI/CD to Azure Container Apps with separate dev and prod
+environments.
 
-Out of the box you get a signed-in Welcome page inside the Ingage AppShell with a small
-Postgres-backed **Notes** table you can add rows to. Copy that pattern for your own features,
-then delete it.
+Signed-in users land on the chat page. Questions go through a topic check, hybrid search
+over the ingested handbook, re-ranking, and a Claude answer that cites its passages. The
+design is in `docs/superpowers/specs/2026-11-12-internal-knowledge-chat-design.md`.
 
 ## Contents
 
-1. [Start here: create your repo from this template](#1-start-here-create-your-repo-from-this-template)
-2. [Get Azure access](#2-get-azure-access)
-3. [Rename checklist](#3-rename-checklist)
-4. [Local development](#4-local-development)
-5. [Commands](#5-commands)
-6. [Testing](#6-testing)
-7. [Environment variables](#7-environment-variables)
-8. [Provision Azure (az CLI)](#8-provision-azure-az-cli)
-9. [Entra app registration](#9-entra-app-registration)
-10. [CI/CD](#10-cicd)
-11. [Custom domain](#11-custom-domain)
-12. [Logs & monitoring](#12-logs--monitoring)
-13. [For template maintainers](#13-for-template-maintainers)
+1. [Get Azure access](#1-get-azure-access)
+2. [Local development](#2-local-development)
+3. [Commands](#3-commands)
+4. [Testing](#4-testing)
+5. [Environment variables](#5-environment-variables)
+6. [Provision Azure (az CLI)](#6-provision-azure-az-cli)
+7. [Entra app registration](#7-entra-app-registration)
+8. [CI/CD](#8-cicd)
+9. [Custom domain](#9-custom-domain)
+10. [Logs & monitoring](#10-logs--monitoring)
 
 ---
 
-## 1. Start here: create your repo from this template
+## 1. Get Azure access
 
-Use GitHub's template feature, not a fork. Your repo then starts with a clean history and
-no link back to this one.
+The app has two resource groups, `rg-ingagepeople-dev` and `rg-ingagepeople-prod`, with
+nothing shared between them. For access, email **phil.lachmann@ingagepartners.com** with who
+needs it. You'll get permissions on the subscription and resource groups, and on the Entra
+app registrations (section 7).
 
-**In the GitHub UI**
-
-1. Open <https://github.com/IngageGroup/bench-web-template>.
-2. Click **Use this template → Create a new repository**.
-3. Owner: **IngageGroup**. Name: your app's repo name. Visibility: **Private**.
-4. Click **Create repository**, then clone it.
-
-**Or with the GitHub CLI**
-
-```bash
-gh repo create IngageGroup/<REPO> --template IngageGroup/bench-web-template --private --clone
-cd <REPO>
-```
-
-**Then give the new repo access to the design system packages.** CI installs
-`@ingagegroup/ingage-react` and `@ingagegroup/ingage-design-tokens` from GitHub Packages
-using the workflow's own token, which only works if each package allows your repo:
-
-1. Open each package's settings:
-   - <https://github.com/orgs/IngageGroup/packages/npm/ingage-react/settings>
-   - <https://github.com/orgs/IngageGroup/packages/npm/ingage-design-tokens/settings>
-2. Under **Manage Actions access**, click **Add repository**, pick your repo, role **Read**.
-
-If you don't have admin rights on those packages, ask whoever gave you Azure access (next
-section).
-
-## 2. Get Azure access
-
-Each app gets its own two resource groups, `rg-<APPNAME>-dev` and `rg-<APPNAME>-prod`, with
-nothing shared between apps or between dev and prod.
-
-To get access for a new application, email **phil.lachmann@ingagepartners.com** with:
-
-- the app name (`<APPNAME>`, see [the naming rules](#81-variables)),
-- the GitHub repo (`IngageGroup/<REPO>`),
-- who needs access.
-
-You'll get permissions on the subscription and resource groups, and either permission to
-create Entra app registrations yourself or registrations created for you (section 9).
-
-## 3. Rename checklist
-
-Every spot to rename contains one of these markers:
-
-| Marker | Meaning |
-|---|---|
-| `bench-web-template` | Slug: package name, Docker image name |
-| `Bench Web Template` | Display name |
-| `<APPNAME>`, `<REPO>`, `<TENANT_ID>`, … | Placeholders in this README and `.env.local.example` |
-
-Find them all:
-
-```bash
-rg -n '[Bb]ench[- ][Ww]eb[- ][Tt]emplate|<[A-Z][A-Z_]+>' --hidden -g '!.git' -g '!node_modules' -g '!pnpm-lock.yaml' -g '!docs'
-```
-
-What to change:
-
-1. `package.json` → `name`.
-2. `src/lib/app-config.ts` → `APP_NAME` and `APP_DESCRIPTION`. The page title, header, and
-   sign-in page all read from here. Also update the `<title>` in `src/app/icon.svg`, and
-   replace the icon itself if your app has its own.
-3. `.github/workflows/deploy.yml` → `IMAGE_NAME`.
-4. This README → title and intro. Then delete the sections you don't need.
-5. Shell placeholders (`<APPNAME>`, `<SUBSCRIPTION_ID>`, …) get real values only in your
-   terminal when you run the section 8 commands. Don't commit real IDs.
-
-Then run `pnpm install` to refresh the lockfile's package name.
-
-## 4. Local development
+## 2. Local development
 
 **Prerequisites:** Node 22, pnpm (`corepack enable` picks the version from `package.json`),
 Docker, and the GitHub CLI (`gh`).
@@ -118,7 +50,7 @@ docker compose up -d
 
 # 4. Environment
 cp .env.local.example .env.local
-#    Fill in the Entra values (section 9) and AUTH_SECRET,
+#    Fill in the Entra values (section 7) and AUTH_SECRET,
 #    or uncomment E2E_AUTH_BYPASS=true to skip sign-in locally.
 
 # 5. Create the tables
@@ -141,9 +73,9 @@ deletes local data), then `docker compose up -d` and `pnpm db:migrate`.
 
 **Changing the schema.** Edit `src/db/schema.ts`, run `pnpm db:generate` to write a new SQL
 migration into `drizzle/`, review it, and commit it. Deployed containers apply pending
-migrations at startup (section 8.10).
+migrations at startup (section 6.10).
 
-## 5. Commands
+## 3. Commands
 
 | Command | What it does |
 |---|---|
@@ -163,7 +95,7 @@ migrations at startup (section 8.10).
 A pre-commit hook (`.githooks/pre-commit`, installed by `pnpm install`) runs Biome on staged
 files.
 
-## 6. Testing
+## 4. Testing
 
 **Unit tests (Vitest)** sit next to the code they test as `*.test.ts`. The starters cover:
 
@@ -171,13 +103,17 @@ files.
   (`src/lib/*.test.ts`)
 - the auth gate in `src/proxy.ts`: which paths are public, 401 for APIs vs. a redirect for
   pages, and failing closed on auth errors
-- the notes Zod schema, the notes and health route handlers (with the database mocked), DB
-  connection-mode selection, the migration lock, and the startup hook
+- the chat request schema and the chat and health route handlers (with their boundaries
+  mocked), DB connection-mode selection, the migration lock, and the startup hook
+- the chat pipeline: topic check, retrieval and RRF, re-ranking and the threshold, citation
+  markers, Voyage retries, and the ingest chunker and parsers
+
+**Database tests** (`*.db.test.ts`, `pnpm test:db`) run against the docker compose
+Postgres: the knowledge version swap, keyword and vector search, and the chat rate limit.
 
 **E2E tests (Playwright)** live in `e2e/`. They run against `pnpm dev` with auth bypass and
-the real local Postgres. `e2e/db.ts` truncates `notes` before each notes test, so tests run
-one at a time. They cover the Welcome page in the AppShell, the empty state, adding a note,
-the empty-title error, the load-failure error, the sign-in page, and `/api/health`.
+the real local Postgres, one at a time. They cover the chat page in the AppShell, asking a
+question and its states, the sign-in page, and `/api/health`.
 
 ```bash
 docker compose up -d && pnpm db:migrate
@@ -187,7 +123,7 @@ pnpm test:e2e --project=desktop-chrome # what CI runs
 
 Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 
-## 7. Environment variables
+## 5. Environment variables
 
 | Variable | Where | Purpose |
 |---|---|---|
@@ -213,7 +149,7 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 Set exactly one of `DATABASE_URL` or the three `PG*` variables. If neither is set, the app
 fails with a message naming both options.
 
-## 8. Provision Azure (az CLI)
+## 6. Provision Azure (az CLI)
 
 Run this whole section once with `ENV=dev`, then again with `ENV=prod`. Each run creates a
 fully separate set of resources:
@@ -230,23 +166,23 @@ fully separate set of resources:
 | Container App | The Next.js container, port 3000, health probes on `/api/health` |
 
 You need the Azure CLI (`az login`), Docker, `psql`, `jq`, and `NODE_AUTH_TOKEN` exported
-(section 4). Run everything in one bash or zsh session; later steps use variables set by
+(section 2). Run everything in one bash or zsh session; later steps use variables set by
 earlier ones. Steps 8.1–8.9 are safe to re-run: Azure `create` commands leave existing
 resources as they are or update them in place, and steps that would replace a secret or add a
 duplicate registration check for an existing one first. **Step 8.10 is first-time only.** It
 creates the Container App from the `:initial` image, so re-running it after CI/CD has deployed
 would roll the app back.
 
-### 8.1 Variables
+### 6.1 Variables
 
 ```bash
 SUBSCRIPTION_ID=<SUBSCRIPTION_ID>
 TENANT_ID=<TENANT_ID>
 LOCATION=eastus2
-APPNAME=<APPNAME>         # 3–16 chars: lowercase letters and digits, starting with a letter
+APPNAME=ingagepeople      # 3–16 chars: lowercase letters and digits, starting with a letter
 ENV=dev                   # dev | prod
-REPO=<REPO>               # GitHub repo name under IngageGroup
-IMAGE=bench-web-template  # must match IMAGE_NAME in .github/workflows/deploy.yml
+REPO=ingage-people       # GitHub repo name under IngageGroup
+IMAGE=ingage-people      # must match IMAGE_NAME in .github/workflows/deploy.yml
 
 RG=rg-$APPNAME-$ENV
 LAW=log-$APPNAME-$ENV
@@ -270,7 +206,7 @@ ME_UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv)
 soft-deleted for 90 days and keeps its name reserved: `az keyvault purge --name "$KV"`
 frees it.
 
-### 8.2 Resource group, logs, App Insights
+### 6.2 Resource group, logs, App Insights
 
 ```bash
 az group create --name "$RG" --location "$LOCATION"
@@ -286,7 +222,7 @@ az monitor app-insights component create --app "$AI" -g "$RG" -l "$LOCATION" \
 AI_CONNECTION=$(az monitor app-insights component show --app "$AI" -g "$RG" --query connectionString -o tsv)
 ```
 
-### 8.3 Managed identity
+### 6.3 Managed identity
 
 ```bash
 az identity create -g "$RG" -n "$ID" -l "$LOCATION"
@@ -295,7 +231,7 @@ ID_CLIENT_ID=$(az identity show -g "$RG" -n "$ID" --query clientId -o tsv)
 ID_PRINCIPAL_ID=$(az identity show -g "$RG" -n "$ID" --query principalId -o tsv)
 ```
 
-### 8.4 Container Registry
+### 6.4 Container Registry
 
 ```bash
 az acr create -g "$RG" -n "$ACR" -l "$LOCATION" --sku Basic --admin-enabled false
@@ -304,7 +240,7 @@ az role assignment create --assignee-object-id "$ID_PRINCIPAL_ID" \
   --assignee-principal-type ServicePrincipal --role AcrPull --scope "$ACR_ID"
 ```
 
-### 8.5 Key Vault
+### 6.5 Key Vault
 
 ```bash
 az keyvault create -g "$RG" -n "$KV" -l "$LOCATION" --enable-rbac-authorization true
@@ -331,7 +267,7 @@ az keyvault secret set --vault-name "$KV" --name voyage-api-key --value "$KEY" -
 unset KEY
 ```
 
-### 8.6 PostgreSQL Flexible Server
+### 6.6 PostgreSQL Flexible Server
 
 Entra authentication only (no password). You become the Entra admin. Public access is
 limited to Azure services (`0.0.0.0`) plus, below, your own IP.
@@ -382,11 +318,11 @@ unset PGPASSWORD
 # Optional: az postgres flexible-server firewall-rule delete -g "$RG" --server-name "$PG" --name developer --yes
 ```
 
-### 8.7 Sign-in app registration
+### 6.7 Sign-in app registration
 
 Create the Entra app that users sign in through, and put its secret in Key Vault. If Phil is
 creating registrations for you, skip the commands and set `APP_REG_ID` to the client ID he
-gives you. He'll put the secret in Key Vault as `entra-client-secret`. Section 9 explains
+gives you. He'll put the secret in Key Vault as `entra-client-secret`. Section 7 explains
 redirect URIs.
 
 ```bash
@@ -456,7 +392,7 @@ should list every permission above.
 Admin consent given to another app (for example Claude Desktop's "M365 MCP Server for
 Claude") doesn't apply here; each app registration needs its own.
 
-### 8.8 Container Apps environment
+### 6.8 Container Apps environment
 
 ```bash
 az extension add --name containerapp --upgrade
@@ -467,10 +403,10 @@ CAE_ID=$(az containerapp env show -g "$RG" -n "$CAE" --query id -o tsv)
 APP_FQDN="$APP.$(az containerapp env show -g "$RG" -n "$CAE" --query properties.defaultDomain -o tsv)"
 ```
 
-### 8.9 First image
+### 6.9 First image
 
 Push an image before creating the Container App, so it never starts from a placeholder.
-After this, CI/CD pushes every new image (section 10).
+After this, CI/CD pushes every new image (section 8).
 
 ```bash
 az acr login --name "$ACR"
@@ -480,7 +416,7 @@ docker build --platform linux/amd64 \
 docker push "$ACR.azurecr.io/$IMAGE:initial"
 ```
 
-### 8.10 Container App
+### 6.10 Container App
 
 **First time only.** After CI/CD has deployed, change settings with
 `az containerapp update` (for example `--set-env-vars`), or export the live definition with
@@ -598,10 +534,10 @@ curl -s "https://$APP_FQDN/api/health"     # {"status":"ok"}
 `containerapp.yaml` contains resource IDs but no secrets. It's still environment-specific, so
 the commands delete it afterwards rather than commit it.
 
-Then add the app's callback URL to the sign-in registration (section 9) and open
+Then add the app's callback URL to the sign-in registration (section 7) and open
 `https://$APP_FQDN`.
 
-## 9. Entra app registration
+## 7. Entra app registration
 
 Each environment has its own sign-in registration (created in 8.7) with its own client
 secret and redirect URIs. Phil may create these for you; you then need only the client ID,
@@ -634,7 +570,7 @@ az keyvault secret show --vault-name "$KV" --name entra-client-secret --query va
 Sign-in is restricted to `ALLOWED_EMAIL_DOMAIN`. The registration is single-tenant
 (`AzureADMyOrg`), so only accounts in your tenant can sign in at all.
 
-## 10. CI/CD
+## 8. CI/CD
 
 | Workflow | Trigger | What it does |
 |---|---|---|
@@ -648,9 +584,9 @@ pushes it to the dev ACR and updates the dev Container App. The prod job runs af
 reviewer approves it, then pushes the **same image** to the prod ACR and updates prod. Each
 job only has credentials for its own environment.
 
-### 10.1 Deploy identity per environment (GitHub OIDC)
+### 8.1 Deploy identity per environment (GitHub OIDC)
 
-Run once per environment, with the section 8 variables still set:
+Run once per environment, with the section 6 variables still set:
 
 ```bash
 DEPLOY_APP_ID=$(az ad app list --display-name "github-$APPNAME-$ENV" --query "[0].appId" -o tsv)
@@ -688,7 +624,7 @@ then restricts both environments to the `main` branch, so a workflow pushed on a
 can't get either identity. If Azure login fails with `AADSTS700213`, the error shows the
 subject GitHub sent; compare it with `az ad app federated-credential list --id "$DEPLOY_APP_ID"`.
 
-### 10.2 GitHub environments, secrets and variables
+### 8.2 GitHub environments, secrets and variables
 
 ```bash
 # Create the environment and allow deployments only from main.
@@ -718,7 +654,7 @@ Then, in the GitHub UI:
    pass. The deploy workflow doesn't run tests itself. It trusts that `main` only gets
    reviewed, passing code.
 
-### 10.3 Dependabot
+### 8.3 Dependabot
 
 `.github/dependabot.yml` updates npm packages and Actions weekly, grouped, after a 7-day
 cooldown. To reach the private `@ingagegroup` packages it needs a token. Create a classic PAT
@@ -728,7 +664,7 @@ with `read:packages` and add it as a Dependabot secret:
 gh secret set DEPENDABOT_PACKAGES_TOKEN --repo "IngageGroup/$REPO" --app dependabot
 ```
 
-## 11. Custom domain
+## 9. Custom domain
 
 ```bash
 DOMAIN=<YOUR_DOMAIN>    # e.g. myapp.ingagepartners.com
@@ -749,7 +685,7 @@ az ad app update --id "$APP_REG_ID" --web-redirect-uris \
   "https://$APP_FQDN/api/auth/callback/microsoft-entra-id"
 ```
 
-## 12. Logs & monitoring
+## 10. Logs & monitoring
 
 **Live console output:**
 
@@ -776,14 +712,14 @@ az monitor log-analytics query -w "$LAW_CUSTOMER_ID" --analytics-query \
   -o table
 ```
 
-Server errors include a correlation ID (`[api/notes 1a2b3c4d] …`) that also appears in the
+Server errors include a correlation ID (`[api/chat 1a2b3c4d] …`) that also appears in the
 API's 500 response, so you can search for it.
 
 **Application Insights** (`appi-<APPNAME>-<ENV>`) shows requests, dependencies (including
 Postgres), and exceptions. It's turned on by `APPLICATIONINSIGHTS_CONNECTION_STRING`. Local
 dev and CI don't set it, so they send nothing.
 
-### 12.1 Chat privacy check
+### 10.1 Chat privacy check
 
 Conversations aren't saved, and question and answer text must not reach logs or telemetry
 either. How the code keeps it out:
@@ -815,11 +751,3 @@ ContainerAppConsoleLogs_CL
 | where TimeGenerated > ago(1h)
 | where Log_s has "zebracorn"
 ```
-
-## 13. For template maintainers
-
-- This repo must stay marked as a template: **Settings → General → Template repository**.
-- Keep it free of app-specific code and real IDs. The rename-checklist `rg` command should
-  only find placeholders.
-- Dependabot keeps dependencies current. When you merge its PRs, check that a fresh
-  "Use this template" repo still passes all three PR workflows.
