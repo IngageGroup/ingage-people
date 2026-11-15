@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMBEDDING_DIMENSIONS } from "@/db/schema";
-import { EMBED_BATCH_SIZE, embedDocuments, embedQuery, rerank } from "@/knowledge/voyage";
+import {
+  EMBED_BATCH_SIZE,
+  embedDocuments,
+  embedQuery,
+  rerank,
+  VoyageError,
+} from "@/knowledge/voyage";
 
 const vectorFor = (n: number) => Array.from({ length: EMBEDDING_DIMENSIONS }, () => n);
 
@@ -72,19 +78,30 @@ describe("embedDocuments", () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
-  it("gives up after the last attempt with the status and body", async () => {
+  it("gives up after the last attempt with the status, keeping the body out of the message", async () => {
     const failures = Array.from({ length: 5 }, () => new Response("overloaded", { status: 500 }));
     const { fetchFn, options } = setup(failures);
-    await expect(embedDocuments(["a"], options)).rejects.toThrow(
-      "Voyage embeddings failed after 5 attempts: HTTP 500 overloaded",
+    const err = await embedDocuments(["a"], options).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(VoyageError);
+    expect((err as VoyageError).message).toBe(
+      "Voyage embeddings failed after 5 attempts: HTTP 500",
     );
+    expect((err as VoyageError).responseBody).toBe("overloaded");
     expect(fetchFn).toHaveBeenCalledTimes(5);
+  });
+
+  it("never puts echoed input in the message", async () => {
+    const echo = JSON.stringify({ detail: [{ input: "my private question" }] });
+    const { options } = setup([new Response(echo, { status: 422 })]);
+    const err = await embedQuery("my private question", options).catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain("private");
   });
 
   it("doesn't retry other client errors", async () => {
     const { fetchFn, options } = setup([new Response("bad key", { status: 401 })]);
     await expect(embedDocuments(["a"], options)).rejects.toThrow(
-      "Voyage embeddings failed: HTTP 401 bad key",
+      "Voyage embeddings failed: HTTP 401",
     );
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
@@ -119,7 +136,7 @@ describe("request limits", () => {
     const failures = [new Response("x", { status: 503 }), new Response("x", { status: 503 })];
     const { fetchFn, options } = setup(failures);
     await expect(embedQuery("q", { ...options, maxAttempts: 2 })).rejects.toThrow(
-      "Voyage embeddings failed after 2 attempts: HTTP 503 x",
+      "Voyage embeddings failed after 2 attempts: HTTP 503",
     );
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
@@ -161,7 +178,7 @@ describe("rerank", () => {
   it("retries like embeddings and names the operation when it fails", async () => {
     const { options } = setup([new Response("bad key", { status: 401 })]);
     await expect(rerank("q", ["a"], { ...options, topK: 1 })).rejects.toThrow(
-      "Voyage rerank failed: HTTP 401 bad key",
+      "Voyage rerank failed: HTTP 401",
     );
   });
 

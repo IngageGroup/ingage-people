@@ -8,7 +8,8 @@ import { runMigrations } from "@/db/migrate";
 export async function startNodeServer(): Promise<void> {
   if (process.env["APPLICATIONINSIGHTS_CONNECTION_STRING"]) {
     const { useAzureMonitor: enableAzureMonitor } = await import("@azure/monitor-opentelemetry");
-    enableAzureMonitor();
+    const { AZURE_MONITOR_OPTIONS } = await import("@/lib/telemetry");
+    enableAzureMonitor(AZURE_MONITOR_OPTIONS);
     console.info("[telemetry] Azure Monitor enabled");
   }
 

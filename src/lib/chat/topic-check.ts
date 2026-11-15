@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { CHAT_TOPICS } from "@/lib/chat-topics";
+import { SafeError } from "@/lib/safe-error";
 import type { ChatTurn } from "@/lib/validation";
 
 export type TopicClient = Pick<Anthropic, "messages">;
@@ -60,7 +61,9 @@ export async function checkTopic(args: {
   });
   if (message.stop_reason === "refusal") return OFF_TOPIC;
   if (!message.parsed_output) {
-    throw new Error(`Topic check returned no classification (stop reason ${message.stop_reason})`);
+    throw new SafeError(
+      `Topic check returned no classification (stop reason ${message.stop_reason})`,
+    );
   }
   return message.parsed_output.topic;
 }

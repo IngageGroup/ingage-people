@@ -783,6 +783,39 @@ API's 500 response, so you can search for it.
 Postgres), and exceptions. It's turned on by `APPLICATIONINSIGHTS_CONNECTION_STRING`. Local
 dev and CI don't set it, so they send nothing.
 
+### 12.1 Chat privacy check
+
+Conversations aren't saved, and question and answer text must not reach logs or telemetry
+either. How the code keeps it out:
+
+- `/api/chat` logs only a correlation id, the failed step, and `describeError(err)`: the
+  error's name plus its HTTP status, error type/code, SQLSTATE, and request id. Upstream error
+  messages are dropped because Anthropic, Voyage, and Postgres can echo request content in
+  them. Errors the app writes itself (`SafeError`, `VoyageError`) keep their message.
+- The Claude client is created with `logLevel: "warn"`, so `ANTHROPIC_LOG=debug` can't make
+  the SDK print request bodies.
+- `src/lib/telemetry.ts` sets the Azure Monitor options: Postgres spans record SQL text but
+  never parameter values (the question is always a parameter), HTTP spans carry no headers or
+  bodies, and console output isn't collected.
+
+To check a deployment by hand, ask one question in the app with a distinctive word in it (for
+example "zebracorn"), wait a few minutes, then search everything the app sent. Every query
+must return no rows.
+
+```kusto
+// Application Insights (appi-<APPNAME>-<ENV>) → Logs
+union traces, requests, dependencies, exceptions, customEvents
+| where timestamp > ago(1h)
+| where * has "zebracorn"
+```
+
+```kusto
+// Log Analytics workspace (log-<APPNAME>-<ENV>) → Logs
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1h)
+| where Log_s has "zebracorn"
+```
+
 ## 13. For template maintainers
 
 - This repo must stay marked as a template: **Settings → General → Template repository**.
