@@ -80,6 +80,29 @@ describe("chunkDocument", () => {
     expect(chunkDocument(doc({ headingPath: ["A"], text: "  \n\n " }), LIMITS)).toEqual([]);
   });
 
+  it("keeps a table that fits under the cap in one chunk, without overlap text in it", () => {
+    const table =
+      "| Title | PTO |\n| --- | --- |\n| Apprentice | 3 weeks |\n| Director | 5 weeks |";
+    const text = `${sentences(3)}\n\n${table}\n\n${sentences(3)}`;
+    const chunks = chunkDocument(doc({ headingPath: ["PTO"], text }), LIMITS);
+
+    expect(chunks.some((c) => c.text === table)).toBe(true);
+  });
+
+  it("splits a long table between rows and repeats the header in each piece", () => {
+    const rows = Array.from({ length: 8 }, (_, i) => `| Benefit ${i} | Eligible ${i} |`);
+    const table = ["| Benefit | Salaried |", "| --- | --- |", ...rows].join("\n");
+    const chunks = chunkDocument(doc({ headingPath: ["Benefits"], text: table }), LIMITS);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.text.length).toBeLessThanOrEqual(LIMITS.maxChars);
+      expect(chunk.text.startsWith("| Benefit | Salaried |\n| --- | --- |\n")).toBe(true);
+    }
+    const chunkRows = chunks.flatMap((c) => c.text.split("\n").slice(2));
+    expect(chunkRows).toEqual(rows);
+  });
+
   it("rejects an overlap that isn't smaller than the cap", () => {
     expect(() => chunkDocument(doc(), { maxChars: 50, overlapChars: 50 })).toThrow(
       "overlapChars (50) must be smaller than maxChars (50)",

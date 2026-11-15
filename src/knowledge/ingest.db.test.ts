@@ -8,6 +8,7 @@ import { getDb, getPool } from "@/db";
 import { getActiveVersion } from "@/db/knowledge";
 import { EMBEDDING_DIMENSIONS, knowledgeSources } from "@/db/schema";
 import { ingestSource } from "@/knowledge/ingest";
+import { makePdf } from "@/knowledge/pdf-fixture";
 import type { LocalFileSource } from "@/knowledge/sources";
 
 const HANDBOOK = `# Test Handbook
@@ -140,12 +141,46 @@ describe("ingestSource", () => {
     );
   });
 
-  it("rejects a file type it can't parse yet", async () => {
+  it("ingests a PDF, citing each chunk's page", async () => {
     const pdf = path.join(path.dirname(file), "handbook.pdf");
-    writeFileSync(pdf, "%PDF-1.7");
+    writeFileSync(
+      pdf,
+      makePdf([
+        [{ text: "Employee Handbook", x: 195, y: 400, size: 24 }],
+        [
+          { text: "Paid Time Off", x: 57, y: 740, size: 16 },
+          {
+            text: "Apprentices get three weeks of PTO each calendar year.",
+            x: 57,
+            y: 700,
+            size: 11,
+          },
+        ],
+      ]),
+    );
     vi.stubEnv(source.pathEnv, pdf);
+
+    const result = await ingestSource(source, { embed, log });
+
+    const chunks = await storedChunks(result.status === "stored" ? result.versionId : "");
+    expect(chunks).toEqual([
+      expect.objectContaining({
+        text: "Apprentices get three weeks of PTO each calendar year.",
+        section_path: ["Paid Time Off"],
+        url: expect.stringMatching(/^file:\/\/.*handbook\.pdf#page=2$/),
+      }),
+    ]);
+    expect(embed).toHaveBeenCalledWith([
+      "Employee Handbook > Paid Time Off\n\nApprentices get three weeks of PTO each calendar year.",
+    ]);
+  });
+
+  it("rejects a file type it can't parse", async () => {
+    const docx = path.join(path.dirname(file), "handbook.docx");
+    writeFileSync(docx, "PK");
+    vi.stubEnv(source.pathEnv, docx);
     await expect(ingestSource(source, { embed, log })).rejects.toThrow(
-      "only Markdown (.md) local files are supported so far",
+      "only Markdown (.md) and PDF (.pdf) local files are supported",
     );
   });
 });

@@ -138,7 +138,7 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `VOYAGE_API_KEY` | all | Voyage AI embeddings and re-rank key (Key Vault `voyage-api-key` in Azure) |
 | `VOYAGE_EMBED_MODEL` | all | Voyage embedding model for ingest and search. Defaults to `voyage-4`; any Voyage 4 model works, stored at 1024 dimensions |
 | `VOYAGE_RERANK_MODEL` | all | Voyage reranker for chat answers. Defaults to `rerank-3` |
-| `HANDBOOK_LOCAL_PATH` | local | Downloaded copy of the handbook for `pnpm ingest`; never committed. Markdown only until the handbook parser lands |
+| `HANDBOOK_LOCAL_PATH` | local | Downloaded copy of the handbook (`.pdf` or `.md`) for `pnpm ingest`; keep it outside the repo and never commit it |
 | `CHAT_TOPIC_MODEL` | all | Claude model that checks each question's topic before search. Defaults to `claude-haiku-5-5` |
 | `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-opus-5-5` |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
