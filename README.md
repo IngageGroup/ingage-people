@@ -657,14 +657,14 @@ DEPLOY_SP_ID=$(az ad sp show --id "$DEPLOY_APP_ID" --query id -o tsv)
 # (repo:IngageGroup@<org id>/<repo>@<repo id>), not repo:IngageGroup/<repo>.
 SUB_PREFIX=$(gh api "repos/IngageGroup/$REPO/actions/oidc/customization/sub" \
   --jq .sub_claim_prefix)
-echo "subject: $SUB_PREFIX:environment:$ENV"
+echo "subject: ${SUB_PREFIX}:environment:$ENV"
 
 az ad app federated-credential show --id "$DEPLOY_APP_ID" \
   --federated-credential-id "github-$ENV" --output none 2>/dev/null ||
   az ad app federated-credential create --id "$DEPLOY_APP_ID" --parameters "{
     \"name\": \"github-$ENV\",
     \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"$SUB_PREFIX:environment:$ENV\",
+    \"subject\": \"${SUB_PREFIX}:environment:$ENV\",
     \"audiences\": [\"api://AzureADTokenExchange\"]
   }"
 
