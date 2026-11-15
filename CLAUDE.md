@@ -63,6 +63,7 @@ src/
 │   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
 │   ├── chat-topics.ts                   # Topics + example questions for the empty state
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
+│   ├── graph-token.ts                   # User's Graph token: scopes, refresh, getGraphAccessToken
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
@@ -120,6 +121,12 @@ Use the Ingage components before writing custom markup.
   bypass and `null` when signed out, and routes return 401 on `null`. Never take user
   identity from the request body.
 - **Auth bypass:** `E2E_AUTH_BYPASS=true` works only when `NODE_ENV !== "production"`.
+- **Microsoft Graph (`src/lib/graph-token.ts`):** sign-in requests delegated, read-only Graph
+  scopes. The `jwt` callback keeps the user's access and refresh tokens in the encrypted
+  session cookie and refreshes them near expiry; a failed refresh, or a session without
+  tokens, ends the session. Server code calls `getGraphAccessToken()`; the tokens never go in
+  the session the browser sees, the database, or logs. Under the auth bypass it throws
+  `GraphTokenError` with reason `unavailable`.
 - **DB connection modes (`src/db/config.ts`):** `DATABASE_URL` (local/CI) or
   `PGHOST`/`PGDATABASE`/`PGUSER` (Azure). In Azure the password is a function, so `pg`
   fetches a fresh Entra token for every new connection. Nothing connects at import time.
