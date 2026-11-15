@@ -61,7 +61,7 @@ src/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION
 │   ├── chat/answer.ts                   # streamAnswer: Claude call, [pN] markers → citations
 │   ├── chat/markers.ts                  # Strips [pN] markers from streamed text, even split
-│   ├── chat/passages.ts                 # Passage type, PassageProvider, dev Markdown provider
+│   ├── chat/passages.ts                 # Passage type, PassageProvider (retrieve → re-rank)
 │   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
 │   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
 │   ├── chat-topics.ts                   # Topics (empty state + topic check) and examples
@@ -73,6 +73,7 @@ src/
 │   ├── sources.ts                       # Source config (reviewed in PRs)
 │   ├── fetch.ts                         # Per-kind fetch: change marker + lazy parse
 │   ├── markdown.ts, document.ts         # Parsers produce ParsedDocument (sections)
+│   ├── pdf.ts, pdf-layout.ts            # pdf.js text → sections: font-size headings, tables, pages
 │   ├── chunk.ts                         # Heading-bound chunks, 2000-char cap, 200 overlap
 │   ├── voyage.ts                        # Voyage document embeddings, batched, retried
 │   ├── ingest.ts                        # fetch → skip if unchanged → chunk → embed → swap
@@ -177,6 +178,13 @@ Use the Ingage components before writing custom markup.
   Embeddings use the text prefixed with `title > heading path`. Logs carry source id, version,
   chunk count, and timings, never document text. `pnpm ingest` runs through `tsx` with
   `--env-file-if-exists=.env.local`; the production image doesn't include it yet (#9).
+- **PDF parsing (`src/knowledge/pdf-layout.ts`):** pdf.js gives positioned text; lines larger
+  than the body size are headings (nested by size; runs of 3+ lines are text), aligned columns
+  become Markdown tables (wrapped cells merged, continued across pages), bullets become `- `
+  lists, page numbers and repeated headers/footers are dropped, and pages before the first
+  bookmark are skipped. A section's `page` is where it starts. The chunker splits long tables
+  between rows and repeats the header. Fixtures come from `makePdf` (`pdf-fixture.ts`), never
+  the real handbook.
 - **Retrieval (`src/knowledge/retrieve.ts`):** keyword (`websearch_to_tsquery` +
   `ts_rank_cd`) and vector (cosine, Voyage `query` embedding) searches run in parallel over
   the topic's active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword

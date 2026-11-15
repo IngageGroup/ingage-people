@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ParsedDocument } from "@/knowledge/document";
 import { parseMarkdown } from "@/knowledge/markdown";
+import { parsePdf } from "@/knowledge/pdf";
 import type { LocalFileSource, SourceConfig } from "@/knowledge/sources";
 
 /** What a source looks like now. `load` does the expensive part, only when it changed. */
@@ -16,7 +17,11 @@ export interface FetchedSource {
   load: () => Promise<ParsedDocument>;
 }
 
-const MARKDOWN = new Set([".md", ".markdown"]);
+const PARSERS: Record<string, (bytes: Buffer) => Promise<ParsedDocument>> = {
+  ".md": async (bytes) => parseMarkdown(bytes.toString("utf8")),
+  ".markdown": async (bytes) => parseMarkdown(bytes.toString("utf8")),
+  ".pdf": (bytes) => parsePdf(bytes),
+};
 
 async function fetchLocalFile(source: LocalFileSource): Promise<FetchedSource> {
   const file = process.env[source.pathEnv]?.trim();
@@ -26,9 +31,10 @@ async function fetchLocalFile(source: LocalFileSource): Promise<FetchedSource> {
     );
   }
   const absolute = path.resolve(file);
-  if (!MARKDOWN.has(path.extname(absolute).toLowerCase())) {
+  const parse = PARSERS[path.extname(absolute).toLowerCase()];
+  if (!parse) {
     throw new Error(
-      `Can't parse ${absolute}: only Markdown (.md) local files are supported so far`,
+      `Can't parse ${absolute}: only Markdown (.md) and PDF (.pdf) local files are supported`,
     );
   }
   let bytes: Buffer;
@@ -45,7 +51,7 @@ async function fetchLocalFile(source: LocalFileSource): Promise<FetchedSource> {
     changeMarker: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     updatedAt: modified,
     url: pathToFileURL(absolute).href,
-    load: async () => parseMarkdown(bytes.toString("utf8")),
+    load: () => parse(bytes),
   };
 }
 
