@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEvent, ChatStreamError, readChatStream } from "@/lib/chat-protocol";
 
-const { emailMock, streamMock, passagesMock } = vi.hoisted(() => ({
+const { emailMock, streamMock, parseMock, passagesMock } = vi.hoisted(() => ({
   emailMock: vi.fn(),
   streamMock: vi.fn(),
+  parseMock: vi.fn(),
   passagesMock: vi.fn(),
 }));
 
@@ -12,10 +13,12 @@ vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     beta = { messages: { stream: streamMock } };
+    messages = { parse: parseMock };
   },
 }));
 
 import { POST } from "@/app/api/chat/route";
+import { OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
 
 const PASSAGE = {
   id: "p1",
@@ -56,11 +59,13 @@ async function events(res: Response): Promise<ChatEvent[]> {
 beforeEach(() => {
   emailMock.mockResolvedValue("a@ingagepartners.com");
   passagesMock.mockResolvedValue([PASSAGE]);
+  parseMock.mockResolvedValue({ stop_reason: "end_turn", parsed_output: { topic: "handbook" } });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   passagesMock.mockReset();
+  parseMock.mockReset();
   emailMock.mockReset();
   streamMock.mockReset();
 });
@@ -136,5 +141,32 @@ describe("POST /api/chat", () => {
     const body = (await res.json()) as { error: string; correlationId: string };
     expect(body.error).toBe("Could not search the handbook");
     expect(body.correlationId).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("politely refuses an off-topic question without searching or answering", async () => {
+    parseMock.mockResolvedValue({ stop_reason: "end_turn", parsed_output: { topic: "off-topic" } });
+
+    const all = await events(await POST(post({ question: "What's the capital of France?" })));
+
+    expect(all).toEqual([
+      { type: "delta", text: OFF_TOPIC_ANSWER },
+      { type: "done", outcome: "off-topic", sources: [] },
+    ]);
+    expect(passagesMock).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to searching when the topic check fails, without logging the question", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    parseMock.mockRejectedValue(new Error("overloaded"));
+    claudeSays(["You have an annual training budget [p1]."]);
+
+    const all = await events(await POST(post({ question: "What is my secret budget?" })));
+
+    expect(passagesMock).toHaveBeenCalled();
+    expect(all.at(-1)).toMatchObject({ type: "done", outcome: "answered" });
+    const log = logged.mock.calls.flat().map(String).join(" ");
+    expect(log).toMatch(/\[api\/chat [0-9a-f]{8}\] topic check failed/);
+    expect(log).not.toContain("secret budget");
   });
 });

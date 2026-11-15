@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
 import { getPassageProvider, type Passage } from "@/lib/chat/passages";
-import { encodeChatEvent } from "@/lib/chat-protocol";
+import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
+import { type ChatEvent, encodeChatEvent } from "@/lib/chat-protocol";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +20,30 @@ function logFailure(correlationId: string, operation: string, err: unknown): voi
   console.error(`[api/chat ${correlationId}] ${operation} failed`, err);
 }
 
-function answerStream(request: ChatRequest, passages: Passage[]): ReadableStream<Uint8Array> {
+async function* offTopicReply(): AsyncGenerator<ChatEvent> {
+  yield { type: "delta", text: OFF_TOPIC_ANSWER };
+  yield { type: "done", outcome: "off-topic", sources: [] };
+}
+
+/**
+ * The question's topic, or null if the check failed. Without a classification the question
+ * goes on to search, where the relevance threshold still turns away unrelated questions.
+ */
+async function topicOf(request: ChatRequest): Promise<string | null> {
+  try {
+    return await checkTopic({ ...request, client: new Anthropic() });
+  } catch (err) {
+    logFailure(newCorrelationId(), "topic check", err);
+    return null;
+  }
+}
+
+function ndjson(events: () => AsyncGenerator<ChatEvent>): Response {
   const encoder = new TextEncoder();
-  return new ReadableStream({
+  const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const events = streamAnswer({ ...request, passages, client: new Anthropic() });
-        for await (const event of events)
+        for await (const event of events())
           controller.enqueue(encoder.encode(encodeChatEvent(event)));
       } catch (err) {
         const correlationId = newCorrelationId();
@@ -36,6 +54,9 @@ function answerStream(request: ChatRequest, passages: Passage[]): ReadableStream
         controller.close();
       }
     },
+  });
+  return new Response(body, {
+    headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" },
   });
 }
 
@@ -57,6 +78,8 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  if ((await topicOf(parsed.data)) === OFF_TOPIC) return ndjson(offTopicReply);
+
   let passages: Passage[];
   try {
     passages = await getPassageProvider()(parsed.data.question);
@@ -69,7 +92,5 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  return new Response(answerStream(parsed.data, passages), {
-    headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" },
-  });
+  return ndjson(() => streamAnswer({ ...parsed.data, passages, client: new Anthropic() }));
 }
