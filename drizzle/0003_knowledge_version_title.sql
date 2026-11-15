@@ -1,0 +1,1 @@
+ALTER TABLE "knowledge_versions" ADD COLUMN "title" text NOT NULL;

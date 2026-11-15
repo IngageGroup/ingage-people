@@ -29,12 +29,14 @@ export interface NewChunk {
 
 export interface ActiveVersion {
   id: string;
+  title: string;
   changeMarker: string;
   documentUpdatedAt: Date;
 }
 
 interface Ingest {
   source: SourceInfo;
+  title: string;
   changeMarker: string;
   documentUpdatedAt: Date;
   chunks: NewChunk[];
@@ -88,6 +90,7 @@ async function swapIn(ingest: Ingest): Promise<string> {
       .insert(knowledgeVersions)
       .values({
         sourceId: ingest.source.id,
+        title: ingest.title,
         changeMarker: ingest.changeMarker,
         documentUpdatedAt: ingest.documentUpdatedAt,
         status: "active",
@@ -117,6 +120,7 @@ async function recordFailure(ingest: Ingest): Promise<void> {
     await upsertSource(tx, ingest.source);
     await tx.insert(knowledgeVersions).values({
       sourceId: ingest.source.id,
+      title: ingest.title,
       changeMarker: ingest.changeMarker,
       documentUpdatedAt: ingest.documentUpdatedAt,
       status: "failed",
@@ -150,6 +154,7 @@ export async function getActiveVersion(sourceId: string): Promise<ActiveVersion 
   const [row] = await getDb()
     .select({
       id: knowledgeVersions.id,
+      title: knowledgeVersions.title,
       changeMarker: knowledgeVersions.changeMarker,
       documentUpdatedAt: knowledgeVersions.documentUpdatedAt,
     })

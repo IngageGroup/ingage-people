@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { parseMarkdown } from "@/knowledge/markdown";
 
 /** A section of a source document that an answer may quote and cite. */
 export interface Passage {
@@ -39,52 +40,24 @@ function words(text: string): Set<string> {
 }
 
 /**
- * Splits a Markdown document into passages: the `#` heading is the document title, and each
- * `##`/`###` section with text under it becomes one passage. Ids are assigned by `rankPassages`.
+ * Splits a Markdown document into passages, one per section under a heading. Ids are assigned
+ * by `rankPassages`.
  */
 export function parsePassagesMarkdown(
   markdown: string,
   source: { url: string; lastUpdated: string },
 ): Passage[] {
-  const passages: Passage[] = [];
-  let title = "";
-  const headings: string[] = [];
-  let body: string[] = [];
-
-  function closeSection() {
-    const text = body.join("\n").trim();
-    if (headings.length > 0 && text) {
-      passages.push({
-        id: "",
-        sectionPath: [...headings],
-        text,
-        documentTitle: title,
-        url: source.url,
-        lastUpdated: source.lastUpdated,
-      });
-    }
-    body = [];
-  }
-
-  for (const line of markdown.split("\n")) {
-    const heading = /^(#{1,3})\s+(.+?)\s*$/.exec(line);
-    if (!heading) {
-      body.push(line);
-      continue;
-    }
-    closeSection();
-    const level = heading[1]?.length ?? 1;
-    const name = heading[2] ?? "";
-    if (level === 1) {
-      title = name;
-      headings.length = 0;
-    } else {
-      headings.length = level - 2;
-      headings.push(name);
-    }
-  }
-  closeSection();
-  return passages;
+  const { title, sections } = parseMarkdown(markdown);
+  return sections
+    .filter((section) => section.headingPath.length > 0)
+    .map((section) => ({
+      id: "",
+      sectionPath: section.headingPath,
+      text: section.text,
+      documentTitle: title,
+      url: source.url,
+      lastUpdated: source.lastUpdated,
+    }));
 }
 
 /** The passages sharing the most words with the question, numbered p1, p2, … */

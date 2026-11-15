@@ -60,6 +60,7 @@ describe("replaceSourceContent", () => {
     const source = testSource();
     const { versionId } = await replaceSourceContent({
       source,
+      title: "Handbook",
       changeMarker: "etag-1",
       documentUpdatedAt: UPDATED,
       chunks: [chunk("Request PTO two weeks ahead.", ["Time Off", "Paid Time Off"], { page: 4 })],
@@ -67,6 +68,7 @@ describe("replaceSourceContent", () => {
 
     expect(await getActiveVersion(source.id)).toEqual({
       id: versionId,
+      title: "Handbook",
       changeMarker: "etag-1",
       documentUpdatedAt: UPDATED,
     });
@@ -78,12 +80,14 @@ describe("replaceSourceContent", () => {
     const source = testSource();
     const first = await replaceSourceContent({
       source,
+      title: "Handbook",
       changeMarker: "etag-1",
       documentUpdatedAt: UPDATED,
       chunks: [chunk("Old text.", ["Old"])],
     });
     const second = await replaceSourceContent({
       source,
+      title: "Handbook",
       changeMarker: "etag-2",
       documentUpdatedAt: UPDATED,
       chunks: [chunk("New text.", ["New"]), chunk("More new text.", ["New", "More"])],
@@ -99,6 +103,7 @@ describe("replaceSourceContent", () => {
     const source = testSource();
     const first = await replaceSourceContent({
       source,
+      title: "Handbook",
       changeMarker: "etag-1",
       documentUpdatedAt: UPDATED,
       chunks: [chunk("Old text.", ["Old"])],
@@ -108,6 +113,7 @@ describe("replaceSourceContent", () => {
     await expect(
       replaceSourceContent({
         source,
+        title: "Handbook",
         changeMarker: "etag-2",
         documentUpdatedAt: UPDATED,
         chunks: [chunk("Good.", ["New"]), chunk("Bad.", ["New"], { embedding: notANumber })],
@@ -134,6 +140,7 @@ describe("replaceSourceContent", () => {
     await expect(
       replaceSourceContent({
         source,
+        title: "Handbook",
         changeMarker: "etag-1",
         documentUpdatedAt: UPDATED,
         chunks: [chunk("Text.", ["A"], { embedding: [0.1, 0.2] })],
@@ -147,6 +154,7 @@ describe("replaceSourceContent", () => {
     await expect(
       replaceSourceContent({
         source,
+        title: "Handbook",
         changeMarker: "etag-1",
         documentUpdatedAt: UPDATED,
         chunks: [],
@@ -158,6 +166,7 @@ describe("replaceSourceContent", () => {
     const source = testSource();
     const { versionId } = await replaceSourceContent({
       source,
+      title: "Handbook",
       changeMarker: "etag-1",
       documentUpdatedAt: UPDATED,
       chunks: [chunk("Spend needs approval.", ["Learning", "Training Budget"])],

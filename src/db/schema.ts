@@ -56,6 +56,8 @@ export const knowledgeVersions = pgTable(
     sourceId: text("source_id")
       .notNull()
       .references(() => knowledgeSources.id, { onDelete: "cascade" }),
+    /** The document's own title, shown with answers. */
+    title: text("title").notNull(),
     /** SharePoint eTag or lastModifiedDateTime, or a content hash. */
     changeMarker: text("change_marker").notNull(),
     /** When the document itself was last updated, shown with answers. */
