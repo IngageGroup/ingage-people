@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CHAT_RATE_LIMITS, consumeChatQuota, type QuotaResult } from "@/db/rate-limit";
 import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
@@ -22,6 +23,12 @@ function newCorrelationId(): string {
  */
 function logFailure(correlationId: string, operation: string, err: unknown): void {
   console.error(`[api/chat ${correlationId}] ${operation} failed: ${describeError(err)}`);
+}
+
+function overLimitMessage(result: Extract<QuotaResult, { allowed: false }>): string {
+  return result.limit === "minute"
+    ? `You've asked ${CHAT_RATE_LIMITS.perMinute} questions in the last minute. Try again in ${result.retryAfterSeconds} seconds.`
+    : `You've reached today's limit of ${CHAT_RATE_LIMITS.perDay} questions. Try again tomorrow.`;
 }
 
 async function* offTopicReply(): AsyncGenerator<ChatEvent> {
@@ -65,7 +72,8 @@ function ndjson(events: () => AsyncGenerator<ChatEvent>): Response {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!(await getCurrentUserEmail())) {
+  const email = await getCurrentUserEmail();
+  if (!email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -80,6 +88,24 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message ?? "Invalid request body";
     return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  let quota: QuotaResult;
+  try {
+    quota = await consumeChatQuota(email);
+  } catch (err) {
+    const correlationId = newCorrelationId();
+    logFailure(correlationId, "check question limit", err);
+    return NextResponse.json(
+      { error: "Could not check your question limit", correlationId },
+      { status: 500 },
+    );
+  }
+  if (!quota.allowed) {
+    return NextResponse.json(
+      { error: overLimitMessage(quota) },
+      { status: 429, headers: { "retry-after": String(quota.retryAfterSeconds) } },
+    );
   }
 
   if ((await topicOf(parsed.data)) === OFF_TOPIC) return ndjson(offTopicReply);

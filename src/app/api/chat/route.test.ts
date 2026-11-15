@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEvent, ChatStreamError, readChatStream } from "@/lib/chat-protocol";
 
-const { emailMock, streamMock, parseMock, passagesMock } = vi.hoisted(() => ({
+const { emailMock, streamMock, parseMock, passagesMock, quotaMock } = vi.hoisted(() => ({
   emailMock: vi.fn(),
+  quotaMock: vi.fn(),
   streamMock: vi.fn(),
   parseMock: vi.fn(),
   passagesMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getCurrentUserEmail: emailMock }));
+vi.mock("@/db/rate-limit", () => ({
+  CHAT_RATE_LIMITS: { perMinute: 10, perDay: 100 },
+  consumeChatQuota: quotaMock,
+}));
 vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
@@ -59,6 +64,7 @@ async function events(res: Response): Promise<ChatEvent[]> {
 beforeEach(() => {
   emailMock.mockResolvedValue("a@ingagepartners.com");
   passagesMock.mockResolvedValue([PASSAGE]);
+  quotaMock.mockResolvedValue({ allowed: true });
   parseMock.mockResolvedValue({ stop_reason: "end_turn", parsed_output: { topic: "handbook" } });
 });
 
@@ -66,6 +72,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   passagesMock.mockReset();
   parseMock.mockReset();
+  quotaMock.mockReset();
   emailMock.mockReset();
   streamMock.mockReset();
 });
@@ -176,5 +183,60 @@ describe("POST /api/chat", () => {
     const log = logged.mock.calls.flat().map(String).join(" ");
     expect(log).toMatch(/\[api\/chat [0-9a-f]{8}\] topic check failed/);
     expect(log).not.toContain("secret budget");
+  });
+
+  it("counts the question against the signed-in user's quota", async () => {
+    claudeSays(["You have an annual training budget [p1]."]);
+    await events(await POST(post({ question: "Budget?" })));
+    expect(quotaMock).toHaveBeenCalledWith("a@ingagepartners.com");
+  });
+
+  it("returns 429 with Retry-After over the per-minute limit, before any model call", async () => {
+    quotaMock.mockResolvedValue({ allowed: false, limit: "minute", retryAfterSeconds: 42 });
+
+    const res = await POST(post({ question: "Budget?" }));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("42");
+    expect(await res.json()).toEqual({
+      error: "You've asked 10 questions in the last minute. Try again in 42 seconds.",
+    });
+    expect(parseMock).not.toHaveBeenCalled();
+    expect(passagesMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 over the per-day limit", async () => {
+    quotaMock.mockResolvedValue({ allowed: false, limit: "day", retryAfterSeconds: 3600 });
+
+    const res = await POST(post({ question: "Budget?" }));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      error: "You've reached today's limit of 100 questions. Try again tomorrow.",
+    });
+  });
+
+  it("rejects oversize input with 400 without using up the quota", async () => {
+    const res = await POST(post({ question: "x".repeat(1001) }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Question must be 1000 characters or fewer" });
+
+    const turns = Array.from({ length: 7 }, () => ({ role: "user", content: "hi" }));
+    expect((await POST(post({ question: "Q?", history: turns }))).status).toBe(400);
+    expect(quotaMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 with a reference when the quota can't be checked", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    quotaMock.mockRejectedValue(Object.assign(new Error("db down"), { code: "57P01" }));
+
+    const res = await POST(post({ question: "Budget?" }));
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; correlationId: string };
+    expect(body.error).toBe("Could not check your question limit");
+    expect(logged.mock.calls.flat().join(" ")).toMatch(
+      /check question limit failed: Error code=57P01/,
+    );
   });
 });

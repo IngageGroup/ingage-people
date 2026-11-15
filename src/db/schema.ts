@@ -7,6 +7,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -96,4 +97,22 @@ export const knowledgeChunks = pgTable(
     index("knowledge_chunks_search_idx").using("gin", t.search),
     index("knowledge_chunks_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
   ],
+);
+
+export const chatUsageWindow = pgEnum("chat_usage_window", ["minute", "day"]);
+
+/**
+ * Questions asked per user per minute and per UTC day, for rate limits. Counters only: no
+ * question text. A user's rows older than two days are deleted as they ask again.
+ */
+export const chatUsage = pgTable(
+  "chat_usage",
+  {
+    /** Lower-cased sign-in email. */
+    userEmail: text("user_email").notNull(),
+    window: chatUsageWindow("window").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userEmail, t.window, t.windowStart] })],
 );
