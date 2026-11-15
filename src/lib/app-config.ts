@@ -1,3 +1,4 @@
-/** Display name and description. Rename these when you create an app from the template. */
-export const APP_NAME = "Bench Web Template";
-export const APP_DESCRIPTION = "An Ingage bench web application";
+/** Display name and description: page title, header, and sign-in page. */
+export const APP_NAME = "Ingage People";
+export const APP_DESCRIPTION =
+  "Ask questions about working at Ingage, answered from the Employee Handbook";

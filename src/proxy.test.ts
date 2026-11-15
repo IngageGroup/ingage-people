@@ -50,8 +50,8 @@ describe("isPublicPath", () => {
   });
 
   it("treats app pages and data APIs as protected", () => {
-    expect(isPublicPath("/notes")).toBe(false);
-    expect(isPublicPath("/api/notes")).toBe(false);
+    expect(isPublicPath("/")).toBe(false);
+    expect(isPublicPath("/api/chat")).toBe(false);
   });
 });
 
@@ -59,8 +59,8 @@ describe("decideAccess", () => {
   it("redirects an unauthenticated page request to sign-in", () => {
     const res = decideAccess({
       authed: false,
-      pathname: "/notes",
-      url: "https://app.test/notes",
+      pathname: "/settings",
+      url: "https://app.test/settings",
       bypass: false,
     });
     expect(res.status).toBe(307);
@@ -72,8 +72,8 @@ describe("decideAccess", () => {
   it("returns 401 for an unauthenticated API request", () => {
     const res = decideAccess({
       authed: false,
-      pathname: "/api/notes",
-      url: "https://app.test/api/notes",
+      pathname: "/api/chat",
+      url: "https://app.test/api/chat",
       bypass: false,
     });
     expect(res.status).toBe(401);
@@ -92,8 +92,8 @@ describe("decideAccess", () => {
   it("allows authenticated requests through", () => {
     const res = decideAccess({
       authed: true,
-      pathname: "/notes",
-      url: "https://app.test/notes",
+      pathname: "/settings",
+      url: "https://app.test/settings",
       bypass: false,
     });
     expect(res.headers.get("x-middleware-next")).toBe("1");
@@ -102,8 +102,8 @@ describe("decideAccess", () => {
   it("allows everything when E2E bypass is enabled", () => {
     const res = decideAccess({
       authed: false,
-      pathname: "/notes",
-      url: "https://app.test/notes",
+      pathname: "/settings",
+      url: "https://app.test/settings",
       bypass: true,
     });
     expect(res.headers.get("x-middleware-next")).toBe("1");
@@ -141,30 +141,30 @@ describe("createGate", () => {
 
   it("allows an authenticated request through", async () => {
     const gate = createGate(wrapperWithAuth({ user: { email: "a@b.com" } }));
-    const res = await gate(fakeReq("/notes"), fakeEvent);
+    const res = await gate(fakeReq("/settings"), fakeEvent);
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("redirects an unauthenticated page request to sign-in", async () => {
-    const res = await createGate(wrapperWithAuth(null))(fakeReq("/notes"), fakeEvent);
+    const res = await createGate(wrapperWithAuth(null))(fakeReq("/settings"), fakeEvent);
     expect(res.status).toBe(307);
     expect(res.headers.get("location") ?? "").toContain("/auth/signin");
   });
 
   it("fails closed on a protected page when Auth.js injects an error object", async () => {
     const gate = createGate(wrapperWithAuth({ message: "config error" }));
-    const res = await gate(fakeReq("/notes"), fakeEvent);
+    const res = await gate(fakeReq("/settings"), fakeEvent);
     expect(res.status).toBe(307);
   });
 
   it("fails closed with 401 on a protected API when an error object is injected", async () => {
     const gate = createGate(wrapperWithAuth({ message: "config error" }));
-    const res = await gate(fakeReq("/api/notes"), fakeEvent);
+    const res = await gate(fakeReq("/api/chat"), fakeEvent);
     expect(res.status).toBe(401);
   });
 
   it("fails closed when the wrapper throws", async () => {
-    const res = await createGate(throwingWrapper)(fakeReq("/notes"), fakeEvent);
+    const res = await createGate(throwingWrapper)(fakeReq("/settings"), fakeEvent);
     expect(res.status).toBe(307);
   });
 
@@ -176,14 +176,14 @@ describe("createGate", () => {
 
   it("allows everything when E2E bypass is enabled", async () => {
     process.env["E2E_AUTH_BYPASS"] = "true";
-    const res = await createGate(wrapperWithAuth(null))(fakeReq("/notes"), fakeEvent);
+    const res = await createGate(wrapperWithAuth(null))(fakeReq("/settings"), fakeEvent);
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("ignores E2E bypass in production", async () => {
     process.env["E2E_AUTH_BYPASS"] = "true";
     vi.stubEnv("NODE_ENV", "production");
-    const res = await createGate(wrapperWithAuth(null))(fakeReq("/notes"), fakeEvent);
+    const res = await createGate(wrapperWithAuth(null))(fakeReq("/settings"), fakeEvent);
     expect(res.status).toBe(307);
     vi.unstubAllEnvs();
   });

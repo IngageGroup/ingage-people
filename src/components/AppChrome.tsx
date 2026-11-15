@@ -9,10 +9,7 @@ const HOME = "/";
 
 const SECTIONS: SidebarSection[] = [
   {
-    items: [
-      { id: "/", label: "Ask", icon: "ai-brain" },
-      { id: "/notes", label: "Notes Sample", icon: "database" },
-    ],
+    items: [{ id: "/", label: "Ask", icon: "ai-brain" }],
   },
 ];
 
