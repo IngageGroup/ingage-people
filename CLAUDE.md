@@ -58,6 +58,7 @@ src/
 │   ├── index.ts                         # Lazy pool/db, pingDb
 │   ├── notes.ts                         # Notes queries
 │   ├── knowledge.ts                     # Knowledge sources: atomic version swap, active version
+│   ├── search.ts                        # keywordSearch (FTS) + vectorSearch (pgvector) per topic
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
@@ -77,6 +78,7 @@ src/
 │   ├── chunk.ts                         # Heading-bound chunks, 2000-char cap, 200 overlap
 │   ├── voyage.ts                        # Voyage document embeddings, batched, retried
 │   ├── ingest.ts                        # fetch → skip if unchanged → chunk → embed → swap
+│   ├── retrieve.ts, rrf.ts              # Hybrid search merged by reciprocal rank fusion
 │   └── cli.ts                           # `pnpm ingest [--source <id>] [--force]`
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
@@ -165,6 +167,11 @@ Use the Ingage components before writing custom markup.
   Embeddings use the text prefixed with `title > heading path`. Logs carry source id, version,
   chunk count, and timings, never document text. `pnpm ingest` runs through `tsx` with
   `--env-file-if-exists=.env.local`; the production image doesn't include it yet (#9).
+- **Retrieval (`src/knowledge/retrieve.ts`):** keyword (`websearch_to_tsquery` +
+  `ts_rank_cd`) and vector (cosine, Voyage `query` embedding) searches run in parallel over
+  the topic's active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword
+  ranking lives only in `keywordSearch` so it can become BM25. `vectorSearch` sets
+  `hnsw.iterative_scan = relaxed_order` so the topic filter can't starve the HNSW results.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.

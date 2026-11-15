@@ -30,7 +30,13 @@ function delayFor(response: Response | null, attempt: number): number {
   return retryAfter > 0 ? retryAfter * 1000 : BASE_DELAY_MS * 2 ** (attempt - 1);
 }
 
-async function post(texts: string[], options: EmbedOptions): Promise<unknown> {
+type InputType = "document" | "query";
+
+async function post(
+  texts: string[],
+  inputType: InputType,
+  options: EmbedOptions,
+): Promise<unknown> {
   const { fetchFn = fetch, sleep = wait } = options;
   const request: RequestInit = {
     method: "POST",
@@ -38,7 +44,7 @@ async function post(texts: string[], options: EmbedOptions): Promise<unknown> {
     body: JSON.stringify({
       input: texts,
       model: options.model,
-      input_type: "document",
+      input_type: inputType,
       output_dimension: EMBEDDING_DIMENSIONS,
     }),
   };
@@ -61,15 +67,11 @@ async function post(texts: string[], options: EmbedOptions): Promise<unknown> {
   throw new Error(`Voyage embeddings failed after ${MAX_ATTEMPTS} attempts: ${lastFailure}`);
 }
 
-/**
- * Embeds texts for storage (Voyage `input_type: "document"`), in batches, retrying rate limits,
- * server errors, and network failures with backoff. Returns one vector per text, in order.
- */
-export async function embedDocuments(texts: string[], options: EmbedOptions): Promise<number[][]> {
+async function embed(texts: string[], inputType: InputType, options: EmbedOptions) {
   const vectors: number[][] = [];
   for (let start = 0; start < texts.length; start += EMBED_BATCH_SIZE) {
     const batch = texts.slice(start, start + EMBED_BATCH_SIZE);
-    const { data } = responseSchema.parse(await post(batch, options));
+    const { data } = responseSchema.parse(await post(batch, inputType, options));
     if (data.length !== batch.length) {
       throw new Error(`Voyage returned ${data.length} embeddings for ${batch.length} inputs`);
     }
@@ -77,4 +79,19 @@ export async function embedDocuments(texts: string[], options: EmbedOptions): Pr
     vectors.push(...ordered.map((item) => item.embedding));
   }
   return vectors;
+}
+
+/**
+ * Embeds texts for storage (Voyage `input_type: "document"`), in batches, retrying rate limits,
+ * server errors, and network failures with backoff. Returns one vector per text, in order.
+ */
+export function embedDocuments(texts: string[], options: EmbedOptions): Promise<number[][]> {
+  return embed(texts, "document", options);
+}
+
+/** Embeds a question for search (Voyage `input_type: "query"`), with the same retries. */
+export async function embedQuery(question: string, options: EmbedOptions): Promise<number[]> {
+  const [vector] = await embed([question], "query", options);
+  if (!vector) throw new Error("Voyage returned no embedding for the question");
+  return vector;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMBEDDING_DIMENSIONS } from "@/db/schema";
-import { EMBED_BATCH_SIZE, embedDocuments } from "@/knowledge/voyage";
+import { EMBED_BATCH_SIZE, embedDocuments, embedQuery } from "@/knowledge/voyage";
 
 const vectorFor = (n: number) => Array.from({ length: EMBEDDING_DIMENSIONS }, () => n);
 
@@ -100,5 +100,16 @@ describe("embedDocuments", () => {
     const { fetchFn, options } = setup([]);
     expect(await embedDocuments([], options)).toEqual([]);
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("embedQuery", () => {
+  it("embeds one question as a query", async () => {
+    const { fetchFn, options } = setup([ok]);
+    expect(await embedQuery("How do I request PTO?", options)).toEqual(vectorFor(21));
+    expect(requestBody(fetchFn, 0)).toMatchObject({
+      input: ["How do I request PTO?"],
+      input_type: "query",
+    });
   });
 });
