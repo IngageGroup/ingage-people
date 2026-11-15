@@ -198,6 +198,8 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `AUTH_SECRET` | all | Auth.js session encryption key (Key Vault `auth-secret` in Azure) |
 | `ANTHROPIC_API_KEY` | all | Claude API key; separate dev and prod keys (Key Vault `anthropic-api-key` in Azure) |
 | `VOYAGE_API_KEY` | all | Voyage AI embeddings and re-rank key (Key Vault `voyage-api-key` in Azure) |
+| `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-opus-5-5` |
+| `CHAT_DEV_PASSAGES_FILE` | local | Markdown file the chat answers from until handbook search exists (`docs/dev/sample-handbook.md`). Ignored in production, where every question gets a "don't know" answer for now |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
 | `ALLOWED_EMAIL_DOMAIN` | all | Only this email domain may sign in. Defaults to `ingagepartners.com` when unset or empty; `*` allows every account in the tenant |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure | Turns on Azure Monitor telemetry; unset means nothing is sent |

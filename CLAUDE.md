@@ -45,6 +45,7 @@ src/
 │   ├── api/auth/[...nextauth]/route.ts  # Auth.js handlers
 │   ├── api/notes/route.ts               # GET list, POST create (Zod, created_by from session)
 │   ├── api/health/route.ts              # DB ping with 5 s cap; public; used by probes
+│   ├── api/chat/route.ts                # POST: passages → Claude → NDJSON stream
 │   ├── auth/signin/page.tsx             # Sign-in card (no AppShell)
 │   ├── layout.tsx                       # Token CSS + SessionProvider + AppChrome
 │   ├── page.tsx                         # Chat page (/)
@@ -59,6 +60,9 @@ src/
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
+│   ├── chat/answer.ts                   # streamAnswer: Claude call, [pN] markers → citations
+│   ├── chat/markers.ts                  # Strips [pN] markers from streamed text, even split
+│   ├── chat/passages.ts                 # Passage type, PassageProvider, dev Markdown provider
 │   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
 │   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
 │   ├── chat-topics.ts                   # Topics + example questions for the empty state
@@ -131,6 +135,13 @@ Use the Ingage components before writing custom markup.
   (`delta`, `citation`, then one `done`, or one `error`). Failures before streaming are plain
   JSON `{ error, correlationId }`. The UI keeps the conversation in React state only (no
   `localStorage`) and sends at most `CHAT_HISTORY_MAX_TURNS` earlier turns.
+- **Chat answers (`src/lib/chat/`):** the route gets passages from `getPassageProvider()`,
+  numbered `p1…`, and `streamAnswer` sends them with the question to Claude (`CHAT_MODEL`,
+  default `claude-opus-5-5`; cached system prompt). Claude cites `[pN]`; the markers are
+  stripped from the stream and become `citation` events. No passages, or an answer citing
+  none, is `dont-know` (Claude isn't called when there are no passages). Until search
+  (#10/#11) exists, `CHAT_DEV_PASSAGES_FILE` (made-up `docs/dev/sample-handbook.md`) is the
+  only provider, and production has none. Never log question or answer text.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.
