@@ -590,12 +590,18 @@ if [ -z "$DEPLOY_APP_ID" ]; then
 fi
 DEPLOY_SP_ID=$(az ad sp show --id "$DEPLOY_APP_ID" --query id -o tsv)
 
+# The repo's OIDC subject prefix. New repos use GitHub's immutable format
+# (repo:IngageGroup@<org id>/<repo>@<repo id>), not repo:IngageGroup/<repo>.
+SUB_PREFIX=$(gh api "repos/IngageGroup/$REPO/actions/oidc/customization/sub" \
+  --jq .sub_claim_prefix)
+echo "subject: $SUB_PREFIX:environment:$ENV"
+
 az ad app federated-credential show --id "$DEPLOY_APP_ID" \
   --federated-credential-id "github-$ENV" --output none 2>/dev/null ||
   az ad app federated-credential create --id "$DEPLOY_APP_ID" --parameters "{
     \"name\": \"github-$ENV\",
     \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"repo:IngageGroup/$REPO:environment:$ENV\",
+    \"subject\": \"$SUB_PREFIX:environment:$ENV\",
     \"audiences\": [\"api://AzureADTokenExchange\"]
   }"
 
@@ -609,8 +615,8 @@ az role assignment create --assignee-object-id "$DEPLOY_SP_ID" \
 The subject pins the credential to one GitHub environment. A workflow job can log in as the
 dev identity only when it runs in the `dev` environment, and the same goes for prod. 10.2
 then restricts both environments to the `main` branch, so a workflow pushed on another branch
-can't get either identity. (This assumes the org uses GitHub's default OIDC subject format.
-If IngageGroup has customized subject claims, match the subject to that format.)
+can't get either identity. If Azure login fails with `AADSTS700213`, the error shows the
+subject GitHub sent; compare it with `az ad app federated-credential list --id "$DEPLOY_APP_ID"`.
 
 ### 10.2 GitHub environments, secrets and variables
 
