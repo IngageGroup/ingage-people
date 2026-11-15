@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "ingest": "node --env-file-if-exists=.env.local --import tsx src/knowledge/cli.ts",
+    "eval": "node --env-file-if-exists=.env.local --import tsx src/eval/run.ts",
+    "eval:generate": "node --env-file-if-exists=.env.local --import tsx src/eval/generate.ts",
     "test:db": "vitest run --config vitest.db.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

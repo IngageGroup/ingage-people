@@ -1,5 +1,5 @@
 import { retrieve } from "@/knowledge/retrieve";
-import { selectPassages } from "@/knowledge/select";
+import { type SelectOptions, selectPassages } from "@/knowledge/select";
 import {
   DEFAULT_EMBED_MODEL,
   DEFAULT_RERANK_MODEL,
@@ -31,10 +31,26 @@ export const CHAT_TOPIC = "handbook";
 /** Someone is waiting: fail within seconds instead of retrying like the ingest job. */
 const INTERACTIVE_LIMITS = { maxAttempts: 2, timeoutMs: 8000 };
 
-function voyageOptions(model: string): VoyageOptions {
+function voyageOptions(model: string, limits: Partial<VoyageOptions>): VoyageOptions {
   const apiKey = process.env["VOYAGE_API_KEY"]?.trim();
   if (!apiKey) throw new SafeError("VOYAGE_API_KEY is not set");
-  return { apiKey, model, ...INTERACTIVE_LIMITS };
+  return { apiKey, model, ...limits };
+}
+
+/**
+ * The search steps behind the chat: hybrid retrieval over the handbook and Voyage re-ranking,
+ * with models from the environment. The eval uses these directly to see each step's results.
+ */
+export function chatSearch(limits: Partial<VoyageOptions> = INTERACTIVE_LIMITS): SelectOptions {
+  const embedModel = process.env["VOYAGE_EMBED_MODEL"]?.trim() || DEFAULT_EMBED_MODEL;
+  const rerankModel = process.env["VOYAGE_RERANK_MODEL"]?.trim() || DEFAULT_RERANK_MODEL;
+  const embedOptions = voyageOptions(embedModel, limits);
+  const rerankOptions = voyageOptions(rerankModel, limits);
+  return {
+    retrieve: (q) =>
+      retrieve(q, { topic: CHAT_TOPIC, embedQuery: (text) => embedQuery(text, embedOptions) }),
+    rerank: (q, documents, topK) => rerank(q, documents, { ...rerankOptions, topK }),
+  };
 }
 
 /**
@@ -43,15 +59,5 @@ function voyageOptions(model: string): VoyageOptions {
  * route reports an error instead of answering without the relevance check.
  */
 export function getPassageProvider(): PassageProvider {
-  return async (question) => {
-    const embedModel = process.env["VOYAGE_EMBED_MODEL"]?.trim() || DEFAULT_EMBED_MODEL;
-    const rerankModel = process.env["VOYAGE_RERANK_MODEL"]?.trim() || DEFAULT_RERANK_MODEL;
-    const embedOptions = voyageOptions(embedModel);
-    const rerankOptions = voyageOptions(rerankModel);
-    return selectPassages(question, {
-      retrieve: (q) =>
-        retrieve(q, { topic: CHAT_TOPIC, embedQuery: (text) => embedQuery(text, embedOptions) }),
-      rerank: (q, documents, topK) => rerank(q, documents, { ...rerankOptions, topK }),
-    });
-  };
+  return async (question) => selectPassages(question, chatSearch());
 }

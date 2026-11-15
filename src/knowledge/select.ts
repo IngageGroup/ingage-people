@@ -9,8 +9,11 @@ export interface SelectConfig {
   minScore: number;
 }
 
-/** Initial values; the threshold gets tuned on the eval set (#17). */
-export const SELECT_CONFIG: SelectConfig = { topK: 5, minScore: 0.5 };
+/**
+ * Set from the handbook eval (`pnpm eval`, 55 cases): at 0.55 every answerable question passed
+ * and 7 of 8 not-covered ones were turned away before Claude. Re-run the eval before changing.
+ */
+export const SELECT_CONFIG: SelectConfig = { topK: 5, minScore: 0.55 };
 
 export interface SelectOptions {
   retrieve: (question: string) => Promise<Candidate[]>;
