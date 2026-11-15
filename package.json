@@ -22,6 +22,7 @@
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@azure/identity": "4.14.1",
     "@azure/monitor-opentelemetry": "1.21.0",
     "@ingagegroup/ingage-design-tokens": "0.1.0",
