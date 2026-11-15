@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EMBEDDING_DIMENSIONS } from "@/db/schema";
+import { SafeError } from "@/lib/safe-error";
 
 export const DEFAULT_EMBED_MODEL = "voyage-4";
 export const DEFAULT_RERANK_MODEL = "rerank-3";
@@ -28,6 +29,22 @@ export interface VoyageOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/**
+ * A failed Voyage call. The message names the operation and status only; Voyage error bodies
+ * can echo the input, so the body is kept in `responseBody` for the ingest CLI and never put
+ * in the message.
+ */
+export class VoyageError extends SafeError {
+  override name = "VoyageError";
+
+  constructor(
+    message: string,
+    readonly responseBody?: string,
+  ) {
+    super(message);
+  }
+}
+
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function retryable(status: number): boolean {
@@ -54,6 +71,7 @@ async function post(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let lastFailure = "";
+  let lastBody: string | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let response: Response | null = null;
     try {
@@ -64,16 +82,23 @@ async function post(
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      lastFailure = err instanceof Error ? err.message : String(err);
+      lastFailure = err instanceof Error ? err.name : "network error";
+      lastBody = undefined;
     }
     if (response?.ok) return response.json();
     if (response) {
-      lastFailure = `HTTP ${response.status} ${(await response.text()).slice(0, 300)}`;
-      if (!retryable(response.status)) throw new Error(`${operation} failed: ${lastFailure}`);
+      lastFailure = `HTTP ${response.status}`;
+      lastBody = (await response.text()).slice(0, 500);
+      if (!retryable(response.status)) {
+        throw new VoyageError(`${operation} failed: ${lastFailure}`, lastBody);
+      }
     }
     if (attempt < maxAttempts) await sleep(delayFor(response, attempt));
   }
-  throw new Error(`${operation} failed after ${maxAttempts} attempts: ${lastFailure}`);
+  throw new VoyageError(
+    `${operation} failed after ${maxAttempts} attempts: ${lastFailure}`,
+    lastBody,
+  );
 }
 
 type InputType = "document" | "query";
@@ -92,7 +117,7 @@ async function embed(texts: string[], inputType: InputType, options: VoyageOptio
       await post("Voyage embeddings", "/embeddings", body, options),
     );
     if (data.length !== batch.length) {
-      throw new Error(`Voyage returned ${data.length} embeddings for ${batch.length} inputs`);
+      throw new VoyageError(`Voyage returned ${data.length} embeddings for ${batch.length} inputs`);
     }
     const ordered = [...data].sort((a, b) => a.index - b.index);
     vectors.push(...ordered.map((item) => item.embedding));
@@ -111,7 +136,7 @@ export function embedDocuments(texts: string[], options: VoyageOptions): Promise
 /** Embeds a question for search (Voyage `input_type: "query"`), with the same retries. */
 export async function embedQuery(question: string, options: VoyageOptions): Promise<number[]> {
   const [vector] = await embed([question], "query", options);
-  if (!vector) throw new Error("Voyage returned no embedding for the question");
+  if (!vector) throw new VoyageError("Voyage returned no embedding for the question");
   return vector;
 }
 

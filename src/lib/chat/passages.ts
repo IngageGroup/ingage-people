@@ -7,6 +7,7 @@ import {
   rerank,
   type VoyageOptions,
 } from "@/knowledge/voyage";
+import { SafeError } from "@/lib/safe-error";
 
 /** A section of a source document that an answer may quote and cite. */
 export interface Passage {
@@ -32,7 +33,7 @@ const INTERACTIVE_LIMITS = { maxAttempts: 2, timeoutMs: 8000 };
 
 function voyageOptions(model: string): VoyageOptions {
   const apiKey = process.env["VOYAGE_API_KEY"]?.trim();
-  if (!apiKey) throw new Error("VOYAGE_API_KEY is not set");
+  if (!apiKey) throw new SafeError("VOYAGE_API_KEY is not set");
   return { apiKey, model, ...INTERACTIVE_LIMITS };
 }
 

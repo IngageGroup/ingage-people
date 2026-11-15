@@ -185,6 +185,12 @@ Use the Ingage components before writing custom markup.
   the topic's active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword
   ranking lives only in `keywordSearch` so it can become BM25. `vectorSearch` sets
   `hnsw.iterative_scan = relaxed_order` so the topic filter can't starve the HNSW results.
+- **Chat privacy:** never log question, answer, or passage text. `/api/chat` logs
+  `describeError(err)` (`src/lib/safe-error.ts`): name plus status/type/code/SQLSTATE/request
+  id; upstream messages are dropped. Throw `SafeError` when the message helps operators and
+  holds no user content. Create Claude clients for chat with `chatClient()` (log level pinned
+  to "warn"). Azure Monitor options live in `src/lib/telemetry.ts` (no Postgres parameter
+  values, no console capture). Manual check: README 12.1.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.

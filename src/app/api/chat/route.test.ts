@@ -118,7 +118,10 @@ describe("POST /api/chat", () => {
 
   it("ends the stream with an error and a reference when Claude fails, without logging the question", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    claudeSays(["Partial "], new Error("overloaded"));
+    claudeSays(
+      ["Partial "],
+      new Error("overloaded while reading: What is my secret training budget?"),
+    );
 
     const res = await POST(post({ question: "What is my secret training budget?" }));
     const error = await events(res).catch((e: unknown) => e);
@@ -132,11 +135,16 @@ describe("POST /api/chat", () => {
   });
 
   it("returns 500 with a reference when search or re-ranking fails", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    passagesMock.mockRejectedValue(new Error("Voyage rerank failed: HTTP 503"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    passagesMock.mockRejectedValue(
+      Object.assign(new Error("invalid input: my private budget question"), { status: 422 }),
+    );
 
-    const res = await POST(post({ question: "Budget?" }));
+    const res = await POST(post({ question: "my private budget question" }));
 
+    const log = logged.mock.calls.flat().map(String).join(" ");
+    expect(log).toMatch(/\[api\/chat [0-9a-f]{8}\] retrieve passages failed: Error status=422/);
+    expect(log).not.toContain("private");
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string; correlationId: string };
     expect(body.error).toBe("Could not search the handbook");
@@ -158,7 +166,7 @@ describe("POST /api/chat", () => {
 
   it("falls back to searching when the topic check fails, without logging the question", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    parseMock.mockRejectedValue(new Error("overloaded"));
+    parseMock.mockRejectedValue(new Error("overloaded: What is my secret budget?"));
     claudeSays(["You have an annual training budget [p1]."]);
 
     const all = await events(await POST(post({ question: "What is my secret budget?" })));

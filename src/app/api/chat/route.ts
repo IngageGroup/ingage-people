@@ -1,10 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
+import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider, type Passage } from "@/lib/chat/passages";
 import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
 import { type ChatEvent, encodeChatEvent } from "@/lib/chat-protocol";
+import { describeError } from "@/lib/safe-error";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,12 @@ function newCorrelationId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
-/** Logs a failure without the question or answer text, which may be personal. */
+/**
+ * Logs a failure without the question or answer text, which may be personal: only the
+ * correlation id, the operation, and `describeError`'s sanitized form of the error.
+ */
 function logFailure(correlationId: string, operation: string, err: unknown): void {
-  console.error(`[api/chat ${correlationId}] ${operation} failed`, err);
+  console.error(`[api/chat ${correlationId}] ${operation} failed: ${describeError(err)}`);
 }
 
 async function* offTopicReply(): AsyncGenerator<ChatEvent> {
@@ -31,7 +35,7 @@ async function* offTopicReply(): AsyncGenerator<ChatEvent> {
  */
 async function topicOf(request: ChatRequest): Promise<string | null> {
   try {
-    return await checkTopic({ ...request, client: new Anthropic() });
+    return await checkTopic({ ...request, client: chatClient() });
   } catch (err) {
     logFailure(newCorrelationId(), "topic check", err);
     return null;
@@ -92,5 +96,5 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  return ndjson(() => streamAnswer({ ...parsed.data, passages, client: new Anthropic() }));
+  return ndjson(() => streamAnswer({ ...parsed.data, passages, client: chatClient() }));
 }
