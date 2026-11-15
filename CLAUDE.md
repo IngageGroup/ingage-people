@@ -56,6 +56,7 @@ src/
 │   ├── knowledge.ts                     # Knowledge sources: atomic version swap, active version
 │   ├── search.ts                        # keywordSearch (FTS) + vectorSearch (pgvector) per topic
 │   ├── rate-limit.ts                    # Per-user chat quota (chat_usage counters)
+│   ├── chat-stats.ts                    # Daily answer counts by topic/outcome and cited section
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION
@@ -198,6 +199,11 @@ Use the Ingage components before writing custom markup.
   (`CHAT_RATE_LIMITS`), fixed windows in `chat_usage` (counters only). Increments happen in a
   transaction that rolls back when over a limit, so refused questions don't count. Over →
   429 with `Retry-After` and a message the UI shows. Quota check failure → 500.
+- **Outcome counts (`src/db/chat-stats.ts`):** after each streamed reply (and on a search
+  failure) the route calls `recordChatOutcome({ topic, outcome, citedSections })`, which bumps
+  `chat_outcome_counts` and, for answers, `chat_citation_counts` (each section once). Counters
+  only: no text, no email. A failed count is logged and never changes the reply. Queries:
+  README 10.2.
 - **Chat privacy:** never log question, answer, or passage text. `/api/chat` logs
   `describeError(err)` (`src/lib/safe-error.ts`): name plus status/type/code/SQLSTATE/request
   id; upstream messages are dropped. Throw `SafeError` when the message helps operators and
