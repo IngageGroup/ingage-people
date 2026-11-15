@@ -405,6 +405,50 @@ The client secret expires after one year. To rotate it without a sign-in outage:
 3. Remove the old secret: find its `keyId` with `az ad app credential list --id "$APP_REG_ID"`,
    then run `az ad app credential delete --id "$APP_REG_ID" --key-id <KEY_ID>`.
 
+#### Microsoft Graph permissions
+
+The app reads Microsoft 365 as the signed-in user, with their own token, so it only sees
+what that user can already open. The registration asks for these delegated, read-only Graph
+permissions; nothing can send or change data.
+
+| Permission | Lets the app read |
+|---|---|
+| `User.Read` | The user's profile (sign-in) |
+| `offline_access` | A refresh token, so the session can renew the Graph token |
+| `Files.Read.All` | Files the user can open in OneDrive and SharePoint |
+| `Sites.Read.All` | SharePoint sites and lists the user can open |
+| `Mail.Read` | The user's mailbox |
+| `Chat.Read` | The user's Teams chats |
+| `ChannelMessage.Read.All` | Messages in Teams channels the user belongs to |
+| `Team.ReadBasic.All` | Names of the teams the user belongs to |
+
+```bash
+GRAPH=00000003-0000-0000-c000-000000000000
+PERMS=(User.Read offline_access Files.Read.All Sites.Read.All Mail.Read Chat.Read
+  ChannelMessage.Read.All Team.ReadBasic.All)
+ARGS=()
+for P in "${PERMS[@]}"; do
+  ARGS+=("$(az ad sp show --id "$GRAPH" \
+    --query "oauth2PermissionScopes[?value=='$P'] | [0].id" -o tsv)=Scope")
+done
+az ad app permission add --id "$APP_REG_ID" --api "$GRAPH" --api-permissions "${ARGS[@]}"
+```
+
+A Microsoft 365 admin (Global, Privileged Role, or Cloud Application Administrator) then
+grants consent for the whole tenant, so users don't each see a consent prompt:
+
+```bash
+az ad app permission admin-consent --id "$APP_REG_ID"
+```
+
+Or in the portal: **Entra ID → App registrations → `<APPNAME>-<ENV>` → API permissions →
+Grant admin consent for Ingage**. Check it with
+`az ad app permission list-grants --id "$APP_REG_ID" --show-resource-name`; the Graph row
+should list every permission above.
+
+Admin consent given to another app (for example Claude Desktop's "M365 MCP Server for
+Claude") doesn't apply here; each app registration needs its own.
+
 ### 8.8 Container Apps environment
 
 ```bash
