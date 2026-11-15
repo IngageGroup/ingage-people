@@ -67,7 +67,8 @@ src/
 │   ├── chat/passages.ts                 # Passage type, PassageProvider, dev Markdown provider
 │   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
 │   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
-│   ├── chat-topics.ts                   # Topics + example questions for the empty state
+│   ├── chat-topics.ts                   # Topics (empty state + topic check) and examples
+│   ├── chat/topic-check.ts              # Haiku classifier: topic id or off-topic
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
@@ -155,6 +156,12 @@ Use the Ingage components before writing custom markup.
   stripped from the stream and become `citation` events. No passages, or an answer citing
   none, is `dont-know` (Claude isn't called when there are no passages). Never log question
   or answer text.
+- **Topic check (`src/lib/chat/topic-check.ts`):** before search, Claude Haiku
+  (`CHAT_TOPIC_MODEL`, no thinking, effort low, structured output) classifies the question,
+  with the last two turns for follow-ups, into a `CHAT_TOPICS` id or `off-topic`. Off-topic
+  (or a refusal) gets `OFF_TOPIC_ANSWER` with outcome `off-topic`; no search, no answer call.
+  If the check fails, the route logs it and searches anyway; the relevance threshold still
+  turns away unrelated questions. Adds about 1 s per question.
 - **Passages (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`):** retrieve over the
   `handbook` topic, re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
   top 5 scoring at least `SELECT_CONFIG.minScore` (0.5 until the eval tunes it). None above it
