@@ -1,7 +1,12 @@
-import { readFile, stat } from "node:fs/promises";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { parseMarkdown } from "@/knowledge/markdown";
+import { retrieve } from "@/knowledge/retrieve";
+import { selectPassages } from "@/knowledge/select";
+import {
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_RERANK_MODEL,
+  embedQuery,
+  rerank,
+  type VoyageOptions,
+} from "@/knowledge/voyage";
 
 /** A section of a source document that an answer may quote and cite. */
 export interface Passage {
@@ -16,90 +21,36 @@ export interface Passage {
   lastUpdated: string;
 }
 
-/**
- * Finds the passages that may answer a question. Real retrieval (hybrid search and re-ranking,
- * #10 and #11) will be another implementation of this.
- */
+/** Finds the passages that may answer a question; none means "I don't know". */
 export type PassageProvider = (question: string) => Promise<Passage[]>;
 
-export const MAX_PASSAGES = 6;
+/** The only topic until the onboarding docs arrive (#20) and the topic check routes (#12). */
+export const CHAT_TOPIC = "handbook";
 
-const STOPWORDS = new Set(
-  "the and for how what when where which who why much many does did are can you your about this that from have has with into there their our get any all how's what's".split(
-    " ",
-  ),
-);
+/** Someone is waiting: fail within seconds instead of retrying like the ingest job. */
+const INTERACTIVE_LIMITS = { maxAttempts: 2, timeoutMs: 8000 };
 
-function words(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((word) => word.length >= 3 && !STOPWORDS.has(word)),
-  );
+function voyageOptions(model: string): VoyageOptions {
+  const apiKey = process.env["VOYAGE_API_KEY"]?.trim();
+  if (!apiKey) throw new Error("VOYAGE_API_KEY is not set");
+  return { apiKey, model, ...INTERACTIVE_LIMITS };
 }
 
 /**
- * Splits a Markdown document into passages, one per section under a heading. Ids are assigned
- * by `rankPassages`.
- */
-export function parsePassagesMarkdown(
-  markdown: string,
-  source: { url: string; lastUpdated: string },
-): Passage[] {
-  const { title, sections } = parseMarkdown(markdown);
-  return sections
-    .filter((section) => section.headingPath.length > 0)
-    .map((section) => ({
-      id: "",
-      sectionPath: section.headingPath,
-      text: section.text,
-      documentTitle: title,
-      url: source.url,
-      lastUpdated: source.lastUpdated,
-    }));
-}
-
-/** The passages sharing the most words with the question, numbered p1, p2, … */
-export function rankPassages(passages: Passage[], question: string, limit: number): Passage[] {
-  const asked = words(question);
-  return passages
-    .map((passage) => {
-      const have = words(`${passage.sectionPath.join(" ")} ${passage.text}`);
-      const score = [...asked].filter((word) => have.has(word)).length;
-      return { passage, score };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ passage }, index) => ({ ...passage, id: `p${index + 1}` }));
-}
-
-async function readDevPassages(file: string): Promise<Passage[]> {
-  const absolute = path.resolve(file);
-  let markdown: string;
-  let modified: Date;
-  try {
-    [markdown, modified] = await Promise.all([
-      readFile(absolute, "utf8"),
-      stat(absolute).then((s) => s.mtime),
-    ]);
-  } catch (cause) {
-    throw new Error(`CHAT_DEV_PASSAGES_FILE can't be read: ${absolute}`, { cause });
-  }
-  return parsePassagesMarkdown(markdown, {
-    url: pathToFileURL(absolute).href,
-    lastUpdated: modified.toISOString().slice(0, 10),
-  });
-}
-
-/**
- * Until retrieval exists: outside production, `CHAT_DEV_PASSAGES_FILE` names a local Markdown
- * file whose sections are searched by shared words. Otherwise there are no passages, so every
- * question gets a "don't know" answer.
+ * Passages from the knowledge store: hybrid search over the handbook, re-ranked by Voyage,
+ * cut to those above the relevance threshold. Throws if Voyage or the database fails, so the
+ * route reports an error instead of answering without the relevance check.
  */
 export function getPassageProvider(): PassageProvider {
-  const file = process.env["CHAT_DEV_PASSAGES_FILE"]?.trim();
-  if (!file || process.env["NODE_ENV"] === "production") return async () => [];
-  return async (question) => rankPassages(await readDevPassages(file), question, MAX_PASSAGES);
+  return async (question) => {
+    const embedModel = process.env["VOYAGE_EMBED_MODEL"]?.trim() || DEFAULT_EMBED_MODEL;
+    const rerankModel = process.env["VOYAGE_RERANK_MODEL"]?.trim() || DEFAULT_RERANK_MODEL;
+    const embedOptions = voyageOptions(embedModel);
+    const rerankOptions = voyageOptions(rerankModel);
+    return selectPassages(question, {
+      retrieve: (q) =>
+        retrieve(q, { topic: CHAT_TOPIC, embedQuery: (text) => embedQuery(text, embedOptions) }),
+      rerank: (q, documents, topK) => rerank(q, documents, { ...rerankOptions, topK }),
+    });
+  };
 }

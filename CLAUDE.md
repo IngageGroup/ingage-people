@@ -79,6 +79,7 @@ src/
 │   ├── voyage.ts                        # Voyage document embeddings, batched, retried
 │   ├── ingest.ts                        # fetch → skip if unchanged → chunk → embed → swap
 │   ├── retrieve.ts, rrf.ts              # Hybrid search merged by reciprocal rank fusion
+│   ├── select.ts                        # Voyage re-rank, top 5, relevance threshold
 │   └── cli.ts                           # `pnpm ingest [--source <id>] [--force]`
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
@@ -152,9 +153,14 @@ Use the Ingage components before writing custom markup.
   numbered `p1…`, and `streamAnswer` sends them with the question to Claude (`CHAT_MODEL`,
   default `claude-opus-5-5`; cached system prompt). Claude cites `[pN]`; the markers are
   stripped from the stream and become `citation` events. No passages, or an answer citing
-  none, is `dont-know` (Claude isn't called when there are no passages). Until search
-  (#10/#11) exists, `CHAT_DEV_PASSAGES_FILE` (made-up `docs/dev/sample-handbook.md`) is the
-  only provider, and production has none. Never log question or answer text.
+  none, is `dont-know` (Claude isn't called when there are no passages). Never log question
+  or answer text.
+- **Passages (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`):** retrieve over the
+  `handbook` topic, re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
+  top 5 scoring at least `SELECT_CONFIG.minScore` (0.5 until the eval tunes it). None above it
+  → don't-know without Claude. Voyage calls from the chat use 2 attempts and an 8 s timeout;
+  a Voyage or DB failure is a 500 with a correlation id, never an ungrounded answer. Locally
+  the chat only knows what you've ingested: `pnpm ingest --source handbook` with the sample.
 - **Knowledge store (`src/db/knowledge.ts`):** sources → versions → chunks.
   `replaceSourceContent` writes a new version's chunks, switches the source's
   `active_version_id`, and deletes the old chunks in one transaction; on failure the old
