@@ -70,6 +70,14 @@ src/
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
+├── knowledge/                           # Ingest pipeline (`pnpm ingest`)
+│   ├── sources.ts                       # Source config (reviewed in PRs)
+│   ├── fetch.ts                         # Per-kind fetch: change marker + lazy parse
+│   ├── markdown.ts, document.ts         # Parsers produce ParsedDocument (sections)
+│   ├── chunk.ts                         # Heading-bound chunks, 2000-char cap, 200 overlap
+│   ├── voyage.ts                        # Voyage document embeddings, batched, retried
+│   ├── ingest.ts                        # fetch → skip if unchanged → chunk → embed → swap
+│   └── cli.ts                           # `pnpm ingest [--source <id>] [--force]`
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
 └── proxy.ts                             # Auth gate (Next 16 replaces middleware.ts)
@@ -87,6 +95,7 @@ pnpm lint:fix        # Biome auto-fix
 pnpm format:check    # Biome format check
 pnpm typecheck       # tsc --noEmit
 pnpm test            # Vitest (no database)
+pnpm ingest          # Ingest knowledge sources (needs VOYAGE_API_KEY, HANDBOOK_LOCAL_PATH)
 pnpm test:db         # *.db.test.ts against the docker compose Postgres (migrate first)
 pnpm test:e2e        # Playwright (needs docker compose Postgres + migrations)
 pnpm db:generate     # New migration from src/db/schema.ts
@@ -151,6 +160,11 @@ Use the Ingage components before writing custom markup.
   `vector(1024)` (Voyage 4 default; HNSW, cosine). `search` is a generated `tsvector` over
   `section_path` (jsonb, weight A) and `text` (weight B); `section_path` is jsonb because
   `to_tsvector(regconfig, jsonb)` is immutable and `array_to_string` isn't.
+- **Ingest (`src/knowledge/`):** a source kind supplies a change marker cheaply and a lazy
+  `load()`; unchanged sources are skipped unless `--force`. Chunks never span sections.
+  Embeddings use the text prefixed with `title > heading path`. Logs carry source id, version,
+  chunk count, and timings, never document text. `pnpm ingest` runs through `tsx` with
+  `--env-file-if-exists=.env.local`; the production image doesn't include it yet (#9).
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.

@@ -153,6 +153,7 @@ migrations at startup (section 8.10).
 | `pnpm format` / `pnpm format:check` | Biome format write / check |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` / `pnpm test:watch` | Vitest unit tests |
+| `pnpm ingest [--source <id>] [--force]` | Bring knowledge sources up to date: fetch, skip if unchanged, chunk, embed with Voyage, swap in. `--force` re-ingests unchanged sources |
 | `pnpm test:db` | Database tests (`*.db.test.ts`) against the docker compose Postgres; run `pnpm db:migrate` first |
 | `pnpm test:e2e` | Playwright E2E (starts `pnpm dev` with auth bypass) |
 | `pnpm test:e2e:ui` / `pnpm test:e2e:headed` | Playwright UI mode / visible browser |
@@ -199,6 +200,8 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `AUTH_SECRET` | all | Auth.js session encryption key (Key Vault `auth-secret` in Azure) |
 | `ANTHROPIC_API_KEY` | all | Claude API key; separate dev and prod keys (Key Vault `anthropic-api-key` in Azure) |
 | `VOYAGE_API_KEY` | all | Voyage AI embeddings and re-rank key (Key Vault `voyage-api-key` in Azure) |
+| `VOYAGE_EMBED_MODEL` | ingest | Voyage embedding model. Defaults to `voyage-4`; any Voyage 4 model works, stored at 1024 dimensions |
+| `HANDBOOK_LOCAL_PATH` | local | Downloaded copy of the handbook for `pnpm ingest`; never committed. Markdown only until the handbook parser lands |
 | `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-opus-5-5` |
 | `CHAT_DEV_PASSAGES_FILE` | local | Markdown file the chat answers from until handbook search exists (`docs/dev/sample-handbook.md`). Ignored in production, where every question gets a "don't know" answer for now |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
