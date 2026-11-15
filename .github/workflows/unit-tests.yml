@@ -15,6 +15,22 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-trixie
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://app:app@localhost:55432/app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -33,3 +49,9 @@ jobs:
 
       - name: Run unit tests
         run: pnpm test --coverage
+
+      - name: Run migrations
+        run: pnpm db:migrate
+
+      - name: Run database tests
+        run: pnpm test:db

@@ -57,6 +57,7 @@ src/
 │   ├── config.ts                        # Connection mode selection + Entra token provider
 │   ├── index.ts                         # Lazy pool/db, pingDb
 │   ├── notes.ts                         # Notes queries
+│   ├── knowledge.ts                     # Knowledge sources: atomic version swap, active version
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
@@ -85,7 +86,8 @@ pnpm lint            # Biome lint + format check (src, e2e, root configs)
 pnpm lint:fix        # Biome auto-fix
 pnpm format:check    # Biome format check
 pnpm typecheck       # tsc --noEmit
-pnpm test            # Vitest
+pnpm test            # Vitest (no database)
+pnpm test:db         # *.db.test.ts against the docker compose Postgres (migrate first)
 pnpm test:e2e        # Playwright (needs docker compose Postgres + migrations)
 pnpm db:generate     # New migration from src/db/schema.ts
 pnpm db:migrate      # Apply migrations to DATABASE_URL
@@ -142,6 +144,13 @@ Use the Ingage components before writing custom markup.
   none, is `dont-know` (Claude isn't called when there are no passages). Until search
   (#10/#11) exists, `CHAT_DEV_PASSAGES_FILE` (made-up `docs/dev/sample-handbook.md`) is the
   only provider, and production has none. Never log question or answer text.
+- **Knowledge store (`src/db/knowledge.ts`):** sources → versions → chunks.
+  `replaceSourceContent` writes a new version's chunks, switches the source's
+  `active_version_id`, and deletes the old chunks in one transaction; on failure the old
+  version stays active and a `failed` version row is recorded. Embeddings are
+  `vector(1024)` (Voyage 4 default; HNSW, cosine). `search` is a generated `tsvector` over
+  `section_path` (jsonb, weight A) and `text` (weight B); `section_path` is jsonb because
+  `to_tsvector(regconfig, jsonb)` is immutable and `array_to_string` isn't.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.
@@ -171,6 +180,10 @@ either the `AZURE_AD_*` trio + `AUTH_SECRET` or `E2E_AUTH_BYPASS=true`.
 - **Vitest must exclude nested checkouts:** `vitest.config.mts` excludes
   `**/node_modules/**` and `**/.claude/**`. Overriding `exclude` without them makes Vitest
   scan agent worktrees.
+- **Database tests are separate:** `*.db.test.ts` need Postgres, so `vitest.config.mts`
+  excludes them and `vitest.db.config.mts` runs only them (one file at a time). CI runs them
+  in the unit-tests job against a pgvector service. Mock-based tests can't catch a missing
+  transaction; keep swap behaviour tested against real Postgres.
 - **Port 55432:** compose maps Postgres to 55432 so it doesn't clash with a local Postgres
   on 5432.
 - **E2E runs one test at a time** (shared database). The first test after a cold `next dev`
