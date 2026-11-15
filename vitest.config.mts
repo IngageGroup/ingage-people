@@ -5,7 +5,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    exclude: ["e2e/**", "**/node_modules/**", "**/.claude/**"],
+    // *.db.test.ts need Postgres; `pnpm test:db` runs them (vitest.db.config.mts).
+    exclude: ["e2e/**", "**/node_modules/**", "**/.claude/**", "**/*.db.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

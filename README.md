@@ -153,6 +153,7 @@ migrations at startup (section 8.10).
 | `pnpm format` / `pnpm format:check` | Biome format write / check |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` / `pnpm test:watch` | Vitest unit tests |
+| `pnpm test:db` | Database tests (`*.db.test.ts`) against the docker compose Postgres; run `pnpm db:migrate` first |
 | `pnpm test:e2e` | Playwright E2E (starts `pnpm dev` with auth bypass) |
 | `pnpm test:e2e:ui` / `pnpm test:e2e:headed` | Playwright UI mode / visible browser |
 | `pnpm db:generate` | Generate a SQL migration from `src/db/schema.ts` |
