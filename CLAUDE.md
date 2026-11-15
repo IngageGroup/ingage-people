@@ -59,6 +59,7 @@ src/
 │   ├── notes.ts                         # Notes queries
 │   ├── knowledge.ts                     # Knowledge sources: atomic version swap, active version
 │   ├── search.ts                        # keywordSearch (FTS) + vectorSearch (pgvector) per topic
+│   ├── rate-limit.ts                    # Per-user chat quota (chat_usage counters)
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION (rename here)
@@ -185,6 +186,11 @@ Use the Ingage components before writing custom markup.
   the topic's active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword
   ranking lives only in `keywordSearch` so it can become BM25. `vectorSearch` sets
   `hnsw.iterative_scan = relaxed_order` so the topic filter can't starve the HNSW results.
+- **Rate limits (`src/db/rate-limit.ts`):** after auth and validation, `/api/chat` calls
+  `consumeChatQuota(email)`: 10 questions per minute and 100 per UTC day
+  (`CHAT_RATE_LIMITS`), fixed windows in `chat_usage` (counters only). Increments happen in a
+  transaction that rolls back when over a limit, so refused questions don't count. Over →
+  429 with `Retry-After` and a message the UI shows. Quota check failure → 500.
 - **Chat privacy:** never log question, answer, or passage text. `/api/chat` logs
   `describeError(err)` (`src/lib/safe-error.ts`): name plus status/type/code/SQLSTATE/request
   id; upstream messages are dropped. Throw `SafeError` when the message helps operators and
