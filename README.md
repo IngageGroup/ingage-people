@@ -586,6 +586,11 @@ pushes it to the dev ACR and updates the dev Container App. The prod job runs af
 reviewer approves it, then pushes the **same image** to the prod ACR and updates prod. Each
 job only has credentials for its own environment.
 
+Dev and prod deploys queue separately. A prod deploy waiting for approval doesn't stop later
+merges from reaching dev. If several merges land before anyone approves, only the newest
+prod deploy stays queued (older queued ones are cancelled), so approving it ships the latest
+`main`.
+
 ### 8.1 Deploy identity per environment (GitHub OIDC)
 
 Run once per environment, with the section 6 variables still set:
