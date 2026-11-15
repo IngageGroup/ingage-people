@@ -196,6 +196,8 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `AZURE_AD_CLIENT_SECRET` | all | Entra client secret (Key Vault `entra-client-secret` in Azure) |
 | `AZURE_AD_TENANT_ID` | all | Entra tenant ID |
 | `AUTH_SECRET` | all | Auth.js session encryption key (Key Vault `auth-secret` in Azure) |
+| `ANTHROPIC_API_KEY` | all | Claude API key; separate dev and prod keys (Key Vault `anthropic-api-key` in Azure) |
+| `VOYAGE_API_KEY` | all | Voyage AI embeddings and re-rank key (Key Vault `voyage-api-key` in Azure) |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
 | `ALLOWED_EMAIL_DOMAIN` | all | Only this email domain may sign in. Defaults to `ingagepartners.com` when unset or empty; `*` allows every account in the tenant |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure | Turns on Azure Monitor telemetry; unset means nothing is sent |
@@ -215,7 +217,7 @@ fully separate set of resources:
 | Application Insights | Request tracing and errors |
 | User-assigned managed identity | Pulls from ACR, reads Key Vault, logs in to Postgres |
 | Container Registry (Basic) | App images |
-| Key Vault (RBAC) | `auth-secret`, `entra-client-secret` |
+| Key Vault (RBAC) | `auth-secret`, `entra-client-secret`, `anthropic-api-key`, `voyage-api-key` |
 | PostgreSQL Flexible Server | Entra auth only; database `<APPNAME>` |
 | Container Apps environment | Hosts the app |
 | Container App | The Next.js container, port 3000, health probes on `/api/health` |
@@ -313,6 +315,13 @@ az role assignment create --assignee-object-id "$ME_ID" \
 az keyvault secret show --vault-name "$KV" --name auth-secret --output none 2>/dev/null ||
   az keyvault secret set --vault-name "$KV" --name auth-secret \
     --value "$(openssl rand -base64 32)" --output none
+
+# API keys: use this environment's key (dev or prod). read -s keeps it out of shell history.
+read -rs -p "Anthropic API key ($ENV): " KEY && echo
+az keyvault secret set --vault-name "$KV" --name anthropic-api-key --value "$KEY" --output none
+read -rs -p "Voyage API key ($ENV): " KEY && echo
+az keyvault secret set --vault-name "$KV" --name voyage-api-key --value "$KEY" --output none
+unset KEY
 ```
 
 ### 8.6 PostgreSQL Flexible Server
@@ -462,6 +471,12 @@ properties:
       - name: entra-client-secret
         keyVaultUrl: ${KV_URI}secrets/entra-client-secret
         identity: $ID_RESOURCE_ID
+      - name: anthropic-api-key
+        keyVaultUrl: ${KV_URI}secrets/anthropic-api-key
+        identity: $ID_RESOURCE_ID
+      - name: voyage-api-key
+        keyVaultUrl: ${KV_URI}secrets/voyage-api-key
+        identity: $ID_RESOURCE_ID
   template:
     containers:
       - name: app
@@ -480,6 +495,10 @@ properties:
             secretRef: entra-client-secret
           - name: AZURE_AD_TENANT_ID
             value: $TENANT_ID
+          - name: ANTHROPIC_API_KEY
+            secretRef: anthropic-api-key
+          - name: VOYAGE_API_KEY
+            secretRef: voyage-api-key
           - name: ALLOWED_EMAIL_DOMAIN
             value: ingagepartners.com
           - name: PGHOST
