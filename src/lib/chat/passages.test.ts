@@ -1,116 +1,70 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getPassageProvider, parsePassagesMarkdown, rankPassages } from "@/lib/chat/passages";
 
-const SAMPLE = `# Sample Handbook
+const { retrieveMock, embedQueryMock, rerankMock } = vi.hoisted(() => ({
+  retrieveMock: vi.fn(),
+  embedQueryMock: vi.fn(),
+  rerankMock: vi.fn(),
+}));
 
-Intro text before any section is ignored.
+vi.mock("@/knowledge/retrieve", () => ({ retrieve: retrieveMock }));
+vi.mock("@/knowledge/voyage", () => ({
+  DEFAULT_EMBED_MODEL: "voyage-4",
+  DEFAULT_RERANK_MODEL: "rerank-3",
+  embedQuery: embedQueryMock,
+  rerank: rerankMock,
+}));
 
-## Benefits
+import { getPassageProvider } from "@/lib/chat/passages";
 
-### Training Budget
-
-Each employee has an annual training budget for courses and conferences.
-
-### Paid Time Off
-
-Request PTO in the HR system at least two weeks ahead.
-
-## Reviews
-
-Performance reviews happen twice a year.
-`;
-
-const SOURCE = { url: "file:///tmp/sample.md", lastUpdated: "2026-11-01" };
+const CANDIDATE = {
+  chunkId: "c1",
+  text: "Request PTO two weeks ahead.",
+  sectionPath: ["Time Off"],
+  page: null,
+  url: "https://example.test/handbook",
+  documentTitle: "Handbook",
+  documentUpdatedAt: new Date("2026-10-01T00:00:00Z"),
+  score: 0.03,
+};
 
 afterEach(() => {
   vi.unstubAllEnvs();
-});
-
-describe("parsePassagesMarkdown", () => {
-  it("makes one passage per section, with the heading path and document title", () => {
-    const passages = parsePassagesMarkdown(SAMPLE, SOURCE);
-    expect(passages.map((p) => p.sectionPath)).toEqual([
-      ["Benefits", "Training Budget"],
-      ["Benefits", "Paid Time Off"],
-      ["Reviews"],
-    ]);
-    expect(passages[0]).toMatchObject({
-      text: "Each employee has an annual training budget for courses and conferences.",
-      documentTitle: "Sample Handbook",
-      url: "file:///tmp/sample.md",
-      lastUpdated: "2026-11-01",
-    });
-  });
-
-  it("skips headings with no text under them", () => {
-    expect(
-      parsePassagesMarkdown(SAMPLE, SOURCE).some(
-        (p) => p.sectionPath.length === 1 && p.sectionPath[0] === "Benefits",
-      ),
-    ).toBe(false);
-  });
-
-  it("returns nothing for a file without sections", () => {
-    expect(parsePassagesMarkdown("# Title\n\nJust text.", SOURCE)).toEqual([]);
-  });
-});
-
-describe("rankPassages", () => {
-  const passages = parsePassagesMarkdown(SAMPLE, SOURCE);
-
-  it("keeps passages that share words with the question, best match first, numbered p1…", () => {
-    const ranked = rankPassages(passages, "How much is my annual training budget?", 5);
-    expect(ranked[0]).toMatchObject({ id: "p1", sectionPath: ["Benefits", "Training Budget"] });
-    expect(ranked.map((p) => p.id)).toEqual(ranked.map((_, i) => `p${i + 1}`));
-  });
-
-  it("matches regardless of case and punctuation", () => {
-    expect(rankPassages(passages, "PTO?", 5).map((p) => p.sectionPath.at(-1))).toEqual([
-      "Paid Time Off",
-    ]);
-  });
-
-  it("returns nothing when no passage shares a meaningful word", () => {
-    expect(rankPassages(passages, "What is the history of space travel?", 5)).toEqual([]);
-  });
-
-  it("returns at most the limit", () => {
-    expect(rankPassages(passages, "employee budget PTO reviews", 2)).toHaveLength(2);
-  });
+  vi.clearAllMocks();
 });
 
 describe("getPassageProvider", () => {
-  function writeSample(): string {
-    const file = path.join(mkdtempSync(path.join(tmpdir(), "passages-")), "handbook.md");
-    writeFileSync(file, SAMPLE);
-    return file;
-  }
+  it("searches the handbook and re-ranks with Voyage, failing fast for a waiting user", async () => {
+    vi.stubEnv("VOYAGE_API_KEY", "key");
+    vi.stubEnv("VOYAGE_RERANK_MODEL", "rerank-test");
+    retrieveMock.mockImplementation(async (question: string, options) => {
+      await options.embedQuery(question);
+      return [CANDIDATE];
+    });
+    rerankMock.mockResolvedValue([{ index: 0, score: 0.9 }]);
 
-  it("returns no passages when no dev file is configured", async () => {
-    vi.stubEnv("CHAT_DEV_PASSAGES_FILE", "");
-    expect(await getPassageProvider()("training budget")).toEqual([]);
-  });
+    const passages = await getPassageProvider()("How do I request PTO?");
 
-  it("reads ranked passages from the dev file", async () => {
-    vi.stubEnv("CHAT_DEV_PASSAGES_FILE", writeSample());
-    const passages = await getPassageProvider()("training budget");
-    expect(passages[0]?.sectionPath).toEqual(["Benefits", "Training Budget"]);
-    expect(passages[0]?.url).toMatch(/^file:\/\/.*handbook\.md$/);
-  });
-
-  it("ignores the dev file in production", async () => {
-    vi.stubEnv("CHAT_DEV_PASSAGES_FILE", writeSample());
-    vi.stubEnv("NODE_ENV", "production");
-    expect(await getPassageProvider()("training budget")).toEqual([]);
-  });
-
-  it("fails with the path when the dev file is missing", async () => {
-    vi.stubEnv("CHAT_DEV_PASSAGES_FILE", "/nonexistent/handbook.md");
-    await expect(getPassageProvider()("training budget")).rejects.toThrow(
-      /CHAT_DEV_PASSAGES_FILE.*\/nonexistent\/handbook\.md/,
+    expect(passages.map((p) => p.text)).toEqual(["Request PTO two weeks ahead."]);
+    expect(retrieveMock).toHaveBeenCalledWith(
+      "How do I request PTO?",
+      expect.objectContaining({ topic: "handbook" }),
     );
+    expect(embedQueryMock).toHaveBeenCalledWith("How do I request PTO?", {
+      apiKey: "key",
+      model: "voyage-4",
+      maxAttempts: 2,
+      timeoutMs: 8000,
+    });
+    expect(rerankMock).toHaveBeenCalledWith(
+      "How do I request PTO?",
+      [expect.stringContaining("Request PTO")],
+      expect.objectContaining({ model: "rerank-test", maxAttempts: 2, topK: 5 }),
+    );
+  });
+
+  it("fails clearly without a Voyage key", async () => {
+    vi.stubEnv("VOYAGE_API_KEY", "");
+    await expect(getPassageProvider()("Q?")).rejects.toThrow("VOYAGE_API_KEY is not set");
+    expect(retrieveMock).not.toHaveBeenCalled();
   });
 });

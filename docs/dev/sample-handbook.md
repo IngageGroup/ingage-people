@@ -1,7 +1,8 @@
 # Sample Handbook (made up, for local development)
 
-This file is invented test content, not Ingage policy. `CHAT_DEV_PASSAGES_FILE` points the chat
-at it outside production, so you can try answers and citations before real retrieval exists.
+This file is invented test content, not Ingage policy. Ingest it locally
+(`HANDBOOK_LOCAL_PATH=docs/dev/sample-handbook.md pnpm ingest --source handbook`) to try answers
+and citations before the real handbook is available.
 
 ## Time Off
 

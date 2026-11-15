@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMBEDDING_DIMENSIONS } from "@/db/schema";
-import { EMBED_BATCH_SIZE, embedDocuments, embedQuery } from "@/knowledge/voyage";
+import { EMBED_BATCH_SIZE, embedDocuments, embedQuery, rerank } from "@/knowledge/voyage";
 
 const vectorFor = (n: number) => Array.from({ length: EMBEDDING_DIMENSIONS }, () => n);
 
@@ -111,5 +111,63 @@ describe("embedQuery", () => {
       input: ["How do I request PTO?"],
       input_type: "query",
     });
+  });
+});
+
+describe("request limits", () => {
+  it("stops after maxAttempts", async () => {
+    const failures = [new Response("x", { status: 503 }), new Response("x", { status: 503 })];
+    const { fetchFn, options } = setup(failures);
+    await expect(embedQuery("q", { ...options, maxAttempts: 2 })).rejects.toThrow(
+      "Voyage embeddings failed after 2 attempts: HTTP 503 x",
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives each attempt a timeout and retries one that times out", async () => {
+    const { fetchFn, options } = setup([new DOMException("timed out", "TimeoutError"), ok]);
+    expect(await embedQuery("q", { ...options, timeoutMs: 1234 })).toEqual(vectorFor(1));
+    const init = fetchFn.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("rerank", () => {
+  function scored(scores: number[]): Response {
+    const data = scores
+      .map((relevance_score, index) => ({ index, relevance_score }))
+      .sort((a, b) => b.relevance_score - a.relevance_score);
+    return new Response(JSON.stringify({ data }), { status: 200 });
+  }
+
+  it("scores documents against the query, best first", async () => {
+    const { fetchFn, options } = setup([scored([0.2, 0.9, 0.5])]);
+    const results = await rerank("PTO?", ["a", "b", "c"], { ...options, topK: 2 });
+
+    expect(results).toEqual([
+      { index: 1, score: 0.9 },
+      { index: 2, score: 0.5 },
+      { index: 0, score: 0.2 },
+    ]);
+    expect(fetchFn.mock.calls[0]?.[0]).toBe("https://api.voyageai.com/v1/rerank");
+    expect(requestBody(fetchFn, 0)).toEqual({
+      query: "PTO?",
+      documents: ["a", "b", "c"],
+      model: "voyage-test",
+      top_k: 2,
+    });
+  });
+
+  it("retries like embeddings and names the operation when it fails", async () => {
+    const { options } = setup([new Response("bad key", { status: 401 })]);
+    await expect(rerank("q", ["a"], { ...options, topK: 1 })).rejects.toThrow(
+      "Voyage rerank failed: HTTP 401 bad key",
+    );
+  });
+
+  it("makes no request for no documents", async () => {
+    const { fetchFn, options } = setup([]);
+    expect(await rerank("q", [], { ...options, topK: 5 })).toEqual([]);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });

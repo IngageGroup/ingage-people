@@ -1,15 +1,14 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEvent, ChatStreamError, readChatStream } from "@/lib/chat-protocol";
 
-const { emailMock, streamMock } = vi.hoisted(() => ({
+const { emailMock, streamMock, passagesMock } = vi.hoisted(() => ({
   emailMock: vi.fn(),
   streamMock: vi.fn(),
+  passagesMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getCurrentUserEmail: emailMock }));
+vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     beta = { messages: { stream: streamMock } };
@@ -18,8 +17,14 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { POST } from "@/app/api/chat/route";
 
-const HANDBOOK =
-  "# Sample Handbook\n\n## Training Budget\n\nEach employee has an annual training budget.\n";
+const PASSAGE = {
+  id: "p1",
+  sectionPath: ["Training Budget"],
+  text: "Each employee has an annual training budget.",
+  documentTitle: "Handbook",
+  url: "https://example.test/handbook",
+  lastUpdated: "2026-10-01",
+};
 
 function claudeSays(chunks: string[], failAfter?: Error) {
   streamMock.mockImplementation(() => ({
@@ -50,14 +55,12 @@ async function events(res: Response): Promise<ChatEvent[]> {
 
 beforeEach(() => {
   emailMock.mockResolvedValue("a@ingagepartners.com");
-  const file = path.join(mkdtempSync(path.join(tmpdir(), "chat-route-")), "handbook.md");
-  writeFileSync(file, HANDBOOK);
-  vi.stubEnv("CHAT_DEV_PASSAGES_FILE", file);
+  passagesMock.mockResolvedValue([PASSAGE]);
 });
 
 afterEach(() => {
-  vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  passagesMock.mockReset();
   emailMock.mockReset();
   streamMock.mockReset();
 });
@@ -101,7 +104,8 @@ describe("POST /api/chat", () => {
     expect(all.at(-1)).toMatchObject({ type: "done", outcome: "answered" });
   });
 
-  it("answers don't-know without calling Claude when no passage matches", async () => {
+  it("answers don't-know without calling Claude when no passage is relevant enough", async () => {
+    passagesMock.mockResolvedValue([]);
     const all = await events(await POST(post({ question: "History of space travel?" })));
     expect(streamMock).not.toHaveBeenCalled();
     expect(all.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
@@ -122,9 +126,9 @@ describe("POST /api/chat", () => {
     expect(log).not.toContain("secret training budget");
   });
 
-  it("returns 500 with a reference when the passages can't be read", async () => {
+  it("returns 500 with a reference when search or re-ranking fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.stubEnv("CHAT_DEV_PASSAGES_FILE", "/nonexistent/handbook.md");
+    passagesMock.mockRejectedValue(new Error("Voyage rerank failed: HTTP 503"));
 
     const res = await POST(post({ question: "Budget?" }));
 
