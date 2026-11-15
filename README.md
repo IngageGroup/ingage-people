@@ -86,6 +86,8 @@ migrations at startup (section 6.10).
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` / `pnpm test:watch` | Vitest unit tests |
 | `pnpm ingest [--source <id>] [--force]` | Bring knowledge sources up to date: fetch, skip if unchanged, chunk, embed with Voyage, swap in. `--force` re-ingests unchanged sources |
+| `pnpm eval [--only <id,id>]` | Run the handbook eval (`evals/handbook.jsonl`) against the local knowledge store: retrieval hits, judged answers, don't-know and off-topic accuracy, injection cases, threshold sweep. Calls Claude and Voyage, so it costs money; run it by hand before changing prompts, chunking, models, or thresholds |
+| `pnpm eval:generate <handbook> --out <file>` | Draft eval cases from a handbook copy with Claude. Review every case before adding it to `evals/handbook.jsonl` |
 | `pnpm test:db` | Database tests (`*.db.test.ts`) against the docker compose Postgres; run `pnpm db:migrate` first |
 | `pnpm test:e2e` | Playwright E2E (starts `pnpm dev` with auth bypass) |
 | `pnpm test:e2e:ui` / `pnpm test:e2e:headed` | Playwright UI mode / visible browser |

@@ -80,6 +80,7 @@ src/
 │   ├── retrieve.ts, rrf.ts              # Hybrid search merged by reciprocal rank fusion
 │   ├── select.ts                        # Voyage re-rank, top 5, relevance threshold
 │   └── cli.ts                           # `pnpm ingest [--source <id>] [--force]`
+├── eval/                                # `pnpm eval`: cases, metrics, Claude judge, generator
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
 └── proxy.ts                             # Auth gate (Next 16 replaces middleware.ts)
@@ -98,6 +99,8 @@ pnpm format:check    # Biome format check
 pnpm typecheck       # tsc --noEmit
 pnpm test            # Vitest (no database)
 pnpm ingest          # Ingest knowledge sources (needs VOYAGE_API_KEY, HANDBOOK_LOCAL_PATH)
+pnpm eval            # Handbook eval against local ingested data (costs money; run manually)
+pnpm eval:generate <handbook> --out <file>  # Draft new eval cases with Claude, for review
 pnpm test:db         # *.db.test.ts against the docker compose Postgres (migrate first)
 pnpm test:e2e        # Playwright (needs docker compose Postgres + migrations)
 pnpm db:generate     # New migration from src/db/schema.ts
@@ -162,7 +165,7 @@ Use the Ingage components before writing custom markup.
   turns away unrelated questions. Adds about 1 s per question.
 - **Passages (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`):** retrieve over the
   `handbook` topic, re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
-  top 5 scoring at least `SELECT_CONFIG.minScore` (0.5 until the eval tunes it). None above it
+  top 5 scoring at least `SELECT_CONFIG.minScore` (0.55, set from the eval). None above it
   → don't-know without Claude. Voyage calls from the chat use 2 attempts and an 8 s timeout;
   a Voyage or DB failure is a 500 with a correlation id, never an ungrounded answer. Locally
   the chat only knows what you've ingested: `pnpm ingest --source handbook` with the sample.
@@ -201,6 +204,13 @@ Use the Ingage components before writing custom markup.
   holds no user content. Create Claude clients for chat with `chatClient()` (log level pinned
   to "warn"). Azure Monitor options live in `src/lib/telemetry.ts` (no Postgres parameter
   values, no console capture). Manual check: README 10.1.
+- **Eval (`src/eval/`, `evals/handbook.jsonl`):** `pnpm eval` runs every case through the
+  chat's own steps (`checkTopic`, `chatSearch` + `selectPassages`, `streamAnswer`), judges
+  answers with Claude (`EVAL_JUDGE_MODEL`) against the expected facts and the passages, and
+  prints retrieval hit rates, answer grades, don't-know precision/recall, topic-check and
+  injection results, and a threshold sweep. It calls Claude and Voyage (costs money), so it
+  runs by hand, not in CI. Cases carry short facts, not handbook text. Re-run it before
+  changing prompts, chunking, models, or thresholds.
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.
