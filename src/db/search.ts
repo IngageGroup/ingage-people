@@ -1,4 +1,4 @@
-import { and, asc, cosineDistance, desc, eq, sql } from "drizzle-orm";
+import { and, asc, cosineDistance, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { knowledgeChunks, knowledgeSources, knowledgeVersions } from "@/db/schema";
 
@@ -14,7 +14,8 @@ export interface ChunkHit {
 }
 
 export interface SearchScope {
-  topic: string;
+  /** Only chunks from sources in these topics. */
+  topics: string[];
   limit: number;
 }
 
@@ -40,7 +41,12 @@ export async function keywordSearch(question: string, scope: SearchScope): Promi
     .from(knowledgeChunks)
     .innerJoin(knowledgeVersions, eq(knowledgeVersions.id, knowledgeChunks.versionId))
     .innerJoin(knowledgeSources, eq(knowledgeSources.activeVersionId, knowledgeChunks.versionId))
-    .where(and(eq(knowledgeSources.topic, scope.topic), sql`${knowledgeChunks.search} @@ ${query}`))
+    .where(
+      and(
+        inArray(knowledgeSources.topic, scope.topics),
+        sql`${knowledgeChunks.search} @@ ${query}`,
+      ),
+    )
     .orderBy(desc(rank))
     .limit(scope.limit);
   return rows.map(({ rank: _rank, ...hit }) => hit);
@@ -58,7 +64,7 @@ export async function vectorSearch(embedding: number[], scope: SearchScope): Pro
       .from(knowledgeChunks)
       .innerJoin(knowledgeVersions, eq(knowledgeVersions.id, knowledgeChunks.versionId))
       .innerJoin(knowledgeSources, eq(knowledgeSources.activeVersionId, knowledgeChunks.versionId))
-      .where(eq(knowledgeSources.topic, scope.topic))
+      .where(inArray(knowledgeSources.topic, scope.topics))
       .orderBy(asc(distance))
       .limit(scope.limit);
     return rows.map(({ distance: _distance, ...hit }) => hit);

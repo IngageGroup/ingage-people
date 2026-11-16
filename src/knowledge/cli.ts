@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { getPool } from "@/db";
-import { ingestSource } from "@/knowledge/ingest";
+import { ingestConfigured } from "@/knowledge/ingest";
 import { SOURCES } from "@/knowledge/sources";
 import { DEFAULT_EMBED_MODEL, embedDocuments } from "@/knowledge/voyage";
 
@@ -31,7 +31,15 @@ async function run(argv: string[]): Promise<boolean> {
   let ok = true;
   for (const source of sources) {
     try {
-      await ingestSource(source, { embed, force: values.force });
+      const results = await ingestConfigured(source, { embed, force: values.force });
+      for (const result of results) {
+        if (result.status !== "failed") continue;
+        ok = false;
+        console.error(
+          `[ingest ${result.sourceId}] failed; the previous version stays active`,
+          result.error,
+        );
+      }
     } catch (err) {
       ok = false;
       console.error(`[ingest ${source.id}] failed; the previous version stays active`, err);

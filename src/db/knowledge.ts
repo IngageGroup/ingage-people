@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   EMBEDDING_DIMENSIONS,
@@ -162,4 +162,21 @@ export async function getActiveVersion(sourceId: string): Promise<ActiveVersion 
     .innerJoin(knowledgeVersions, eq(knowledgeVersions.id, knowledgeSources.activeVersionId))
     .where(eq(knowledgeSources.id, sourceId));
   return row ?? null;
+}
+
+/**
+ * Deletes the sources whose ids start with `prefix` but aren't in `keep`, with their versions
+ * and chunks (by cascade). Returns the deleted ids. Used when a repo Markdown file is removed.
+ */
+export async function removeSourcesExcept(prefix: string, keep: string[]): Promise<string[]> {
+  const rows = await getDb()
+    .delete(knowledgeSources)
+    .where(
+      and(
+        sql`starts_with(${knowledgeSources.id}, ${prefix})`,
+        keep.length > 0 ? notInArray(knowledgeSources.id, keep) : undefined,
+      ),
+    )
+    .returning({ id: knowledgeSources.id });
+  return rows.map((row) => row.id).sort();
 }

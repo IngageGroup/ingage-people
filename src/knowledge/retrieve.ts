@@ -15,22 +15,23 @@ export interface Candidate extends ChunkHit {
 }
 
 export interface RetrieveOptions {
-  topic: string;
+  /** Search only these topics' sources. */
+  topics: string[];
   /** Embeds the question for search (Voyage `input_type: "query"`). */
   embedQuery: (question: string) => Promise<number[]>;
   config?: typeof RETRIEVAL_CONFIG;
 }
 
 /**
- * First stage of answering: keyword and vector search over the topic's active chunks, in
+ * First stage of answering: keyword and vector search over the topics' active chunks, in
  * parallel, merged by reciprocal rank fusion. Each chunk appears once, best first.
  */
 export async function retrieve(question: string, options: RetrieveOptions): Promise<Candidate[]> {
-  const { topic, embedQuery, config = RETRIEVAL_CONFIG } = options;
+  const { topics, embedQuery, config = RETRIEVAL_CONFIG } = options;
   const [keyword, vector] = await Promise.all([
-    keywordSearch(question, { topic, limit: config.keywordCandidates }),
+    keywordSearch(question, { topics, limit: config.keywordCandidates }),
     embedQuery(question).then((embedding) =>
-      vectorSearch(embedding, { topic, limit: config.vectorCandidates }),
+      vectorSearch(embedding, { topics, limit: config.vectorCandidates }),
     ),
   ]);
   const withIds = (hits: ChunkHit[]) => hits.map((hit) => ({ ...hit, id: hit.chunkId }));

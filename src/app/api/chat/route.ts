@@ -6,6 +6,7 @@ import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider, type Passage } from "@/lib/chat/passages";
 import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
 import { type ChatEvent, encodeChatEvent } from "@/lib/chat-protocol";
+import { searchTopics } from "@/lib/chat-topics";
 import { describeError } from "@/lib/safe-error";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
 
@@ -108,11 +109,12 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  if ((await topicOf(parsed.data)) === OFF_TOPIC) return ndjson(offTopicReply);
+  const topic = await topicOf(parsed.data);
+  if (topic === OFF_TOPIC) return ndjson(offTopicReply);
 
   let passages: Passage[];
   try {
-    passages = await getPassageProvider()(parsed.data.question);
+    passages = await getPassageProvider()(parsed.data.question, searchTopics(topic));
   } catch (err) {
     const correlationId = newCorrelationId();
     logFailure(correlationId, "retrieve passages", err);

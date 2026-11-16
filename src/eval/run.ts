@@ -18,6 +18,7 @@ import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { chatSearch } from "@/lib/chat/passages";
 import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
+import { searchTopics } from "@/lib/chat-topics";
 
 const THRESHOLDS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
 const CONCURRENCY = 4;
@@ -29,7 +30,7 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
   const topic = await checkTopic({ ...request, client }).catch(() => null);
 
   // Search runs for every case so the threshold sweep sees off-topic questions too.
-  const search = chatSearch({});
+  const search = chatSearch(searchTopics(topic), {});
   let candidates: Candidate[] = [];
   let ranked: RerankResult[] = [];
   const passages = await selectPassages(evalCase.question, {
