@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -105,4 +106,34 @@ export const chatUsage = pgTable(
     count: integer("count").notNull(),
   },
   (t) => [primaryKey({ columns: [t.userEmail, t.window, t.windowStart] })],
+);
+
+/**
+ * Chat answers per UTC day, topic, and outcome, to see where the documents fall short.
+ * Counters only: no question or answer text, no user.
+ */
+export const chatOutcomeCounts = pgTable(
+  "chat_outcome_counts",
+  {
+    day: date("day").notNull(),
+    /** Topic-check result: a topic id, "off-topic", or "unclassified" when the check failed. */
+    topic: text("topic").notNull(),
+    /** answered, dont-know, off-topic, or error. */
+    outcome: text("outcome").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.topic, t.outcome] })],
+);
+
+/** How often each section is cited per UTC day and topic. Counters only. */
+export const chatCitationCounts = pgTable(
+  "chat_citation_counts",
+  {
+    day: date("day").notNull(),
+    topic: text("topic").notNull(),
+    /** Heading path joined with " > ". */
+    section: text("section").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.topic, t.section] })],
 );

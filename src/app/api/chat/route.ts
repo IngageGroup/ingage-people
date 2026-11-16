@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { type ChatOutcomeRecord, recordChatOutcome } from "@/db/chat-stats";
 import { CHAT_RATE_LIMITS, consumeChatQuota, type QuotaResult } from "@/db/rate-limit";
 import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider, type Passage } from "@/lib/chat/passages";
 import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
-import { type ChatEvent, encodeChatEvent } from "@/lib/chat-protocol";
+import { type ChatEvent, type ChatOutcome, encodeChatEvent } from "@/lib/chat-protocol";
 import { searchTopics } from "@/lib/chat-topics";
 import { describeError } from "@/lib/safe-error";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
@@ -37,32 +38,51 @@ async function* offTopicReply(): AsyncGenerator<ChatEvent> {
   yield { type: "done", outcome: "off-topic", sources: [] };
 }
 
+/** Topic label for outcome counts when the topic check failed. */
+const UNCLASSIFIED = "unclassified";
+
 /**
- * The question's topic, or null if the check failed. Without a classification the question
- * goes on to search, where the relevance threshold still turns away unrelated questions.
+ * The question's topic, or "unclassified" if the check failed. Without a classification the
+ * question goes on to search, where the relevance threshold still turns away unrelated ones.
  */
-async function topicOf(request: ChatRequest): Promise<string | null> {
+async function topicOf(request: ChatRequest): Promise<string> {
   try {
     return await checkTopic({ ...request, client: chatClient() });
   } catch (err) {
     logFailure(newCorrelationId(), "topic check", err);
-    return null;
+    return UNCLASSIFIED;
   }
 }
 
-function ndjson(events: () => AsyncGenerator<ChatEvent>): Response {
+/** Adds the answer to the daily outcome counts. A failure is logged and doesn't affect the reply. */
+async function recordOutcome(record: ChatOutcomeRecord): Promise<void> {
+  try {
+    await recordChatOutcome(record);
+  } catch (err) {
+    logFailure(newCorrelationId(), "record outcome", err);
+  }
+}
+
+function ndjson(topic: string, events: () => AsyncGenerator<ChatEvent>): Response {
   const encoder = new TextEncoder();
+  let outcome: ChatOutcome | "error" = "error";
+  const citedSections: string[][] = [];
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of events())
+        for await (const event of events()) {
+          if (event.type === "citation") citedSections.push(event.citation.sectionPath);
+          if (event.type === "done") outcome = event.outcome;
           controller.enqueue(encoder.encode(encodeChatEvent(event)));
+        }
       } catch (err) {
         const correlationId = newCorrelationId();
         logFailure(correlationId, "answer", err);
         const event = { type: "error", error: ANSWER_FAILED, correlationId } as const;
         controller.enqueue(encoder.encode(encodeChatEvent(event)));
       } finally {
+        const cited = outcome === "answered" ? citedSections : [];
+        await recordOutcome({ topic, outcome, citedSections: cited });
         controller.close();
       }
     },
@@ -110,7 +130,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const topic = await topicOf(parsed.data);
-  if (topic === OFF_TOPIC) return ndjson(offTopicReply);
+  if (topic === OFF_TOPIC) return ndjson(topic, offTopicReply);
 
   let passages: Passage[];
   try {
@@ -118,11 +138,12 @@ export async function POST(request: Request): Promise<Response> {
   } catch (err) {
     const correlationId = newCorrelationId();
     logFailure(correlationId, "retrieve passages", err);
+    await recordOutcome({ topic, outcome: "error", citedSections: [] });
     return NextResponse.json(
       { error: "Could not search the handbook", correlationId },
       { status: 500 },
     );
   }
 
-  return ndjson(() => streamAnswer({ ...parsed.data, passages, client: chatClient() }));
+  return ndjson(topic, () => streamAnswer({ ...parsed.data, passages, client: chatClient() }));
 }

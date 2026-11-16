@@ -586,6 +586,11 @@ pushes it to the dev ACR and updates the dev Container App. The prod job runs af
 reviewer approves it, then pushes the **same image** to the prod ACR and updates prod. Each
 job only has credentials for its own environment.
 
+Dev and prod deploys queue separately. A prod deploy waiting for approval doesn't stop later
+merges from reaching dev. If several merges land before anyone approves, only the newest
+prod deploy stays queued (older queued ones are cancelled), so approving it ships the latest
+`main`.
+
 ### 8.1 Deploy identity per environment (GitHub OIDC)
 
 Run once per environment, with the section 6 variables still set:
@@ -753,3 +758,42 @@ ContainerAppConsoleLogs_CL
 | where TimeGenerated > ago(1h)
 | where Log_s has "zebracorn"
 ```
+
+### 10.2 Answer outcomes by topic
+
+The chat counts its answers without keeping any question or answer text or who asked. Two
+tables hold daily counters (UTC days):
+
+- `chat_outcome_counts`: per day, topic, and outcome (`answered`, `dont-know`, `off-topic`,
+  `error`). The topic is the topic check's result, or `unclassified` when the check failed.
+- `chat_citation_counts`: per day and topic, how often each section was cited.
+
+A high `dont-know` share for a topic points at a gap in its documents. Connect as the Entra
+admin as in section 6.6 (firewall rule, then `PGPASSWORD` from
+`az account get-access-token --resource-type oss-rdbms`), then:
+
+```sql
+-- Daily counts by topic and outcome, last 30 days
+SELECT day, topic, outcome, count
+FROM chat_outcome_counts
+WHERE day > current_date - 30
+ORDER BY day DESC, topic, outcome;
+
+-- Don't-know share per topic, last 30 days
+SELECT topic,
+       coalesce(sum(count) FILTER (WHERE outcome = 'dont-know'), 0) AS dont_know,
+       sum(count) AS total,
+       round(100.0 * coalesce(sum(count) FILTER (WHERE outcome = 'dont-know'), 0) / sum(count)) AS pct
+FROM chat_outcome_counts
+WHERE day > current_date - 30 AND outcome <> 'off-topic'
+GROUP BY topic;
+
+-- Most cited sections, last 30 days
+SELECT topic, section, sum(count) AS citations
+FROM chat_citation_counts
+WHERE day > current_date - 30
+GROUP BY topic, section
+ORDER BY citations DESC
+LIMIT 20;
+```
+

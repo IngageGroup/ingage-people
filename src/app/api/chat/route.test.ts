@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEvent, ChatStreamError, readChatStream } from "@/lib/chat-protocol";
 
-const { emailMock, streamMock, parseMock, passagesMock, quotaMock } = vi.hoisted(() => ({
-  emailMock: vi.fn(),
-  quotaMock: vi.fn(),
-  streamMock: vi.fn(),
-  parseMock: vi.fn(),
-  passagesMock: vi.fn(),
-}));
+const { emailMock, streamMock, parseMock, passagesMock, quotaMock, recordMock } = vi.hoisted(
+  () => ({
+    emailMock: vi.fn(),
+    recordMock: vi.fn(),
+    quotaMock: vi.fn(),
+    streamMock: vi.fn(),
+    parseMock: vi.fn(),
+    passagesMock: vi.fn(),
+  }),
+);
 
 vi.mock("@/lib/auth", () => ({ getCurrentUserEmail: emailMock }));
 vi.mock("@/db/rate-limit", () => ({
   CHAT_RATE_LIMITS: { perMinute: 10, perDay: 100 },
   consumeChatQuota: quotaMock,
 }));
+vi.mock("@/db/chat-stats", () => ({ recordChatOutcome: recordMock }));
 vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
@@ -65,6 +69,7 @@ beforeEach(() => {
   emailMock.mockResolvedValue("a@ingagepartners.com");
   passagesMock.mockResolvedValue([PASSAGE]);
   quotaMock.mockResolvedValue({ allowed: true });
+  recordMock.mockResolvedValue(undefined);
   parseMock.mockResolvedValue({ stop_reason: "end_turn", parsed_output: { topic: "handbook" } });
 });
 
@@ -73,6 +78,7 @@ afterEach(() => {
   passagesMock.mockReset();
   parseMock.mockReset();
   quotaMock.mockReset();
+  recordMock.mockReset();
   emailMock.mockReset();
   streamMock.mockReset();
 });
@@ -244,5 +250,86 @@ describe("POST /api/chat", () => {
     expect(logged.mock.calls.flat().join(" ")).toMatch(
       /check question limit failed: Error code=57P01/,
     );
+  });
+
+  describe("outcome counts", () => {
+    it("records the topic, outcome, and cited sections of an answer", async () => {
+      claudeSays(["You have an annual training budget [p1]."]);
+      await events(await POST(post({ question: "Budget?" })));
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "handbook",
+        outcome: "answered",
+        citedSections: [["Training Budget"]],
+      });
+    });
+
+    it("records off-topic questions", async () => {
+      parseMock.mockResolvedValue({
+        stop_reason: "end_turn",
+        parsed_output: { topic: "off-topic" },
+      });
+      await events(await POST(post({ question: "Capital of France?" })));
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "off-topic",
+        outcome: "off-topic",
+        citedSections: [],
+      });
+    });
+
+    it("records don't-know answers, and the topic as unclassified when the check failed", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      parseMock.mockRejectedValue(new Error("overloaded"));
+      passagesMock.mockResolvedValue([]);
+      await events(await POST(post({ question: "Dogs at the office?" })));
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "unclassified",
+        outcome: "dont-know",
+        citedSections: [],
+      });
+    });
+
+    it("records a failed answer as an error", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      claudeSays(["Partial "], new Error("overloaded"));
+      await expect(events(await POST(post({ question: "Budget?" })))).rejects.toThrow(
+        ChatStreamError,
+      );
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "handbook",
+        outcome: "error",
+        citedSections: [],
+      });
+    });
+
+    it("records a failed search as an error", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      passagesMock.mockRejectedValue(new Error("db down"));
+      expect((await POST(post({ question: "Budget?" }))).status).toBe(500);
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "handbook",
+        outcome: "error",
+        citedSections: [],
+      });
+    });
+
+    it("still answers when the count can't be saved, and logs it without the question", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      recordMock.mockRejectedValue(Object.assign(new Error("db down: Budget?"), { code: "57P01" }));
+      claudeSays(["You have an annual training budget [p1]."]);
+
+      const out = await events(await POST(post({ question: "Budget?" })));
+
+      expect(out.at(-1)).toMatchObject({ type: "done", outcome: "answered" });
+      const log = logged.mock.calls.flat().map(String).join(" ");
+      expect(log).toMatch(/record outcome failed: Error code=57P01/);
+      expect(log).not.toContain("Budget?");
+    });
+
+    it("records nothing for requests turned away before the pipeline", async () => {
+      quotaMock.mockResolvedValue({ allowed: false, limit: "minute", retryAfterSeconds: 5 });
+      await POST(post({ question: "Budget?" }));
+      await POST(post({ question: "" }));
+      expect(recordMock).not.toHaveBeenCalled();
+    });
   });
 });
