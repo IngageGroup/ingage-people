@@ -58,7 +58,7 @@ src/
 │   ├── rate-limit.ts                    # Per-user chat quota (chat_usage counters)
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
-│   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION
+│   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION / HR_CONTACT
 │   ├── chat/answer.ts                   # streamAnswer: Claude call, [pN] markers → citations
 │   ├── chat/markers.ts                  # Strips [pN] markers from streamed text, even split
 │   ├── chat/passages.ts                 # Passage type, PassageProvider (retrieve → re-rank)

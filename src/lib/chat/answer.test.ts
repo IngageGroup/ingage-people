@@ -63,6 +63,7 @@ describe("streamAnswer", () => {
 
     expect(stream).not.toHaveBeenCalled();
     expect(text(events)).toBe(NO_PASSAGES_ANSWER);
+    expect(NO_PASSAGES_ANSWER).toContain("erin.roberts@revisioncollective.com");
     expect(events.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
   });
 
@@ -117,7 +118,8 @@ describe("streamAnswer", () => {
     );
     expect(events.at(-1)).toEqual({
       type: "error",
-      error: "This question can't be answered here. Ask HR instead.",
+      error:
+        "This question can't be answered here. Ask HR instead: Erin Roberts, erin.roberts@revisioncollective.com.",
     });
   });
 
@@ -150,6 +152,8 @@ describe("streamAnswer", () => {
     expect(params["system"]).toEqual([
       expect.objectContaining({ type: "text", cache_control: { type: "ephemeral" } }),
     ]);
+    const [system] = params["system"] as { text: string }[];
+    expect(system?.text).toContain("Erin Roberts (erin.roberts@revisioncollective.com)");
     const messages = params["messages"] as { role: string; content: string }[];
     expect(messages.slice(0, 2)).toEqual([
       { role: "user", content: "Earlier question" },

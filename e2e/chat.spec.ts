@@ -62,6 +62,9 @@ test.describe("Chat", () => {
     await expect(page.getByText("Ask About Working at Ingage")).toBeVisible();
     await expect(page.getByRole("button", { name: "How do I request PTO?" })).toBeVisible();
     await expect(page.getByText("HR is the authority")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "erin.roberts@revisioncollective.com" }),
+    ).toHaveAttribute("href", "mailto:erin.roberts@revisioncollective.com");
   });
 
   test("answers with a citation that expands to the quoted passage", async ({ page }) => {
