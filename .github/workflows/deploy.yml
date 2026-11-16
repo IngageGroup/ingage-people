@@ -2,16 +2,16 @@ name: Deploy
 
 # Builds the image once, deploys it to dev, then (after approval in the "prod" GitHub
 # environment) pushes the same image to the prod registry and deploys it there.
+#
+# Each deploy job has its own concurrency group, so a prod deploy waiting for approval
+# doesn't hold up dev. A newer queued job replaces an older queued one in the same group, so
+# whatever gets approved is the latest main.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions: {}
-
-concurrency:
-  group: deploy
-  cancel-in-progress: false
 
 env:
   IMAGE_NAME: ingage-people
@@ -48,6 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
     permissions:
       id-token: write # OIDC login to Azure
       contents: read
@@ -90,6 +93,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
     permissions:
       id-token: write # OIDC login to Azure
       contents: read
