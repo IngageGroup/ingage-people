@@ -17,8 +17,11 @@ import type { RerankResult } from "@/knowledge/voyage";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { chatSearch } from "@/lib/chat/passages";
-import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
+import { SourceRegistry } from "@/lib/chat/sources";
+import { chatTools } from "@/lib/chat/tools";
+import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
 import { searchTopics } from "@/lib/chat-topics";
+import { GraphTokenError } from "@/lib/graph-token";
 
 const THRESHOLDS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
 const CONCURRENCY = 4;
@@ -45,11 +48,20 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
   });
 
   let outcome: CaseResult["outcome"] = "off-topic";
-  let answer = OFF_TOPIC_ANSWER;
+  let answer = offTopicAnswer();
   if (topic !== OFF_TOPIC) {
     answer = "";
     outcome = "error";
-    for await (const event of streamAnswer({ ...request, passages, client })) {
+    // The agent's handbook search returns the passages selected above, so the answer and the
+    // retrieval metrics see the same passages. The eval has no Microsoft 365 session.
+    const registry = new SourceRegistry();
+    const tools = chatTools({
+      registry,
+      passages: async () => passages,
+      handbookTopics: searchTopics(topic),
+      graphToken: () => Promise.reject(new GraphTokenError("unavailable", "eval")),
+    });
+    for await (const event of streamAnswer({ ...request, tools, registry, client })) {
       if (event.type === "delta") answer += event.text;
       if (event.type === "done") outcome = event.outcome;
     }

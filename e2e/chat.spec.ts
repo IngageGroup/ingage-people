@@ -100,7 +100,7 @@ test.describe("Chat", () => {
     });
     await page.goto("/");
     await askQuestion(page, "What is the training budget?");
-    await expect(page.getByRole("status")).toHaveText("Searching the handbook…");
+    await expect(page.getByRole("status")).toHaveText("Searching…");
     await expect(askButton(page)).toBeDisabled();
     release();
     await expect(page.getByText("training budget of $2,000.")).toBeVisible();

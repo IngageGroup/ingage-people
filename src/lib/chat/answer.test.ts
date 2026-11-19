@@ -1,41 +1,65 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type AnswerClient, NO_PASSAGES_ANSWER, streamAnswer } from "@/lib/chat/answer";
+import { type AnswerClient, streamAnswer } from "@/lib/chat/answer";
 import type { Passage } from "@/lib/chat/passages";
+import { SourceRegistry } from "@/lib/chat/sources";
+import { chatTools } from "@/lib/chat/tools";
 import { type ChatEvent, chatEventSchema } from "@/lib/chat-protocol";
 
-const PASSAGES: Passage[] = [
-  {
-    id: "p1",
-    sectionPath: ["Benefits", "Training Budget"],
-    text: "Each employee has an annual training budget.",
-    documentTitle: "Sample Handbook",
-    url: "file:///tmp/handbook.md",
-    lastUpdated: "2026-11-01",
-  },
-  {
-    id: "p2",
-    sectionPath: ["Benefits", "Paid Time Off"],
-    text: "Request PTO two weeks ahead.",
-    documentTitle: "Sample Handbook",
-    url: "file:///tmp/handbook.md",
-    lastUpdated: "2026-11-01",
-  },
-];
+const PASSAGE: Passage = {
+  id: "c1",
+  sectionPath: ["Benefits", "Training Budget"],
+  text: "Each employee has an annual training budget.",
+  documentTitle: "Sample Handbook",
+  url: "https://example.test/handbook.pdf",
+  lastUpdated: "2026-11-01",
+};
 
-type StreamEvent = { type: string; delta?: { type: string; text?: string; thinking?: string } };
+/** One model turn: text it streams, tools it calls afterwards, and how it stopped. */
+interface Step {
+  chunks?: string[];
+  calls?: Array<{ name: string; input: Record<string, string> }>;
+  stopReason?: string;
+}
 
-function fakeClient(chunks: string[], stopReason = "end_turn") {
-  const events: StreamEvent[] = [
-    { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "hmm" } },
-    ...chunks.map((text) => ({ type: "content_block_delta", delta: { type: "text_delta", text } })),
-  ];
-  const stream = vi.fn(() => ({
+type Tool = { name: string; run: (input: Record<string, string>) => unknown };
+
+/**
+ * Stands in for `client.beta.messages.toolRunner(..., stream: true)`: yields one message
+ * stream per step and runs the step's tool calls once that stream has been read, as the
+ * SDK does between iterations.
+ */
+function fakeRunner(steps: Step[]) {
+  const toolRunner = vi.fn((params: { tools: Tool[] }) => ({
     async *[Symbol.asyncIterator]() {
-      yield* events;
+      for (const step of steps) {
+        yield {
+          async *[Symbol.asyncIterator]() {
+            yield { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "…" } };
+            for (const text of step.chunks ?? []) {
+              yield { type: "content_block_delta", delta: { type: "text_delta", text } };
+            }
+          },
+          finalMessage: async () => ({ stop_reason: step.stopReason ?? "end_turn" }),
+        };
+        for (const call of step.calls ?? []) {
+          const tool = params.tools.find((t) => t.name === call.name);
+          await Promise.resolve(tool?.run(call.input)).catch(() => undefined);
+        }
+      }
     },
-    finalMessage: async () => ({ stop_reason: stopReason }),
   }));
-  return { client: { beta: { messages: { stream } } } as unknown as AnswerClient, stream };
+  return { client: { beta: { messages: { toolRunner } } } as unknown as AnswerClient, toolRunner };
+}
+
+function setup(steps: Step[]) {
+  const registry = new SourceRegistry();
+  const tools = chatTools({
+    registry,
+    passages: async () => [PASSAGE],
+    handbookTopics: ["handbook"],
+    graphToken: async () => "tok",
+  });
+  return { registry, tools, ...fakeRunner(steps) };
 }
 
 async function collect(events: AsyncIterable<ChatEvent>): Promise<ChatEvent[]> {
@@ -50,40 +74,32 @@ async function collect(events: AsyncIterable<ChatEvent>): Promise<ChatEvent[]> {
 const text = (events: ChatEvent[]) =>
   events.flatMap((e) => (e.type === "delta" ? [e.text] : [])).join("");
 
+const SEARCH = { name: "search_handbook", input: { query: "training budget" } };
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("streamAnswer", () => {
-  it("answers don't-know without calling Claude when there are no passages", async () => {
-    const { client, stream } = fakeClient([]);
+  it("streams text without markers, then a citation for each cited source, then done", async () => {
+    const { client, tools, registry } = setup([
+      { calls: [SEARCH], stopReason: "tool_use" },
+      { chunks: ["You have an annual ", "training budget [p", "1]."] },
+    ]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], passages: [], client }),
-    );
-
-    expect(stream).not.toHaveBeenCalled();
-    expect(text(events)).toBe(NO_PASSAGES_ANSWER);
-    expect(NO_PASSAGES_ANSWER).toContain("erin.roberts@revisioncollective.com");
-    expect(events.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
-  });
-
-  it("streams the answer without markers, then citations, then done", async () => {
-    const { client } = fakeClient(["You have an annual training ", "budget [p1]."]);
-    const events = await collect(
-      streamAnswer({ question: "Budget?", history: [], passages: PASSAGES, client }),
+      streamAnswer({ question: "Budget?", history: [], tools, registry, client }),
     );
 
     expect(text(events)).toBe("You have an annual training budget.");
-    const citations = events.filter((e) => e.type === "citation");
-    expect(citations).toEqual([
+    expect(events.filter((e) => e.type === "citation")).toEqual([
       {
         type: "citation",
         citation: {
           id: "p1",
           sectionPath: ["Benefits", "Training Budget"],
-          quote: "Each employee has an annual training budget.",
+          quote: PASSAGE.text,
           documentTitle: "Sample Handbook",
-          url: "file:///tmp/handbook.md",
+          url: PASSAGE.url,
         },
       },
     ]);
@@ -95,26 +111,48 @@ describe("streamAnswer", () => {
   });
 
   it("treats an answer that cites nothing as don't-know", async () => {
-    const { client } = fakeClient(["The handbook doesn't cover that. Ask HR."]);
+    const { client, tools, registry } = setup([
+      { calls: [SEARCH], stopReason: "tool_use" },
+      { chunks: ["The handbook doesn't cover that."] },
+    ]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], passages: PASSAGES, client }),
+      streamAnswer({ question: "Pets?", history: [], tools, registry, client }),
     );
-    expect(events.some((e) => e.type === "citation")).toBe(false);
     expect(events.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
   });
 
-  it("ignores cited ids that weren't provided", async () => {
-    const { client } = fakeClient(["Yes [p9]."]);
+  it("ignores cited ids that no tool returned in this answer", async () => {
+    const { client, tools, registry } = setup([{ chunks: ["Yes [m9] and [p1]."] }]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], passages: PASSAGES, client }),
+      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
     );
+    expect(events.some((e) => e.type === "citation")).toBe(false);
     expect(events.at(-1)).toMatchObject({ outcome: "dont-know" });
   });
 
-  it("ends with an error when Claude declines", async () => {
-    const { client } = fakeClient(["Partial"], "refusal");
+  it("ends with the cut-off error when the run stops on a tool call (iteration cap)", async () => {
+    const { client, tools, registry } = setup([
+      { chunks: ["Let me look [p1]"], calls: [SEARCH], stopReason: "tool_use" },
+    ]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], passages: PASSAGES, client }),
+      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+    );
+    expect(events.at(-1)).toEqual({ type: "error", error: "The answer was cut off. Try again." });
+    expect(events.some((e) => e.type === "done")).toBe(false);
+  });
+
+  it("ends with the cut-off error when the answer hits the length limit", async () => {
+    const { client, tools, registry } = setup([{ chunks: ["Long"], stopReason: "max_tokens" }]);
+    const events = await collect(
+      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+    );
+    expect(events.at(-1)).toEqual({ type: "error", error: "The answer was cut off. Try again." });
+  });
+
+  it("ends with an error naming HR when Claude declines", async () => {
+    const { client, tools, registry } = setup([{ stopReason: "refusal" }]);
+    const events = await collect(
+      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
     );
     expect(events.at(-1)).toEqual({
       type: "error",
@@ -123,54 +161,55 @@ describe("streamAnswer", () => {
     });
   });
 
-  it("ends with an error when the answer hits the length limit", async () => {
-    const { client } = fakeClient(["Long [p1]"], "max_tokens");
-    const events = await collect(
-      streamAnswer({ question: "Q?", history: [], passages: PASSAGES, client }),
-    );
-    expect(events.at(-1)).toEqual({ type: "error", error: "The answer was cut off. Try again." });
-  });
-
-  it("sends the model, cached rules, history, and the passages with their ids", async () => {
-    vi.stubEnv("CHAT_MODEL", "claude-test-model");
-    const { client, stream } = fakeClient(["Ok [p2]."]);
+  it("sends the model, cached rules, tools, history, and question to the tool runner", async () => {
+    const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
     await collect(
       streamAnswer({
-        question: "How do I request PTO?",
+        question: "And part-time?",
         history: [
-          { role: "user", content: "Earlier question" },
-          { role: "assistant", content: "Earlier answer" },
+          { role: "user", content: "PTO?" },
+          { role: "assistant", content: "15 days." },
         ],
-        passages: PASSAGES,
+        tools,
+        registry,
         client,
       }),
     );
-
-    const params = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
-    expect(params["model"]).toBe("claude-test-model");
-    expect(params["fallbacks"]).toBe("default");
-    expect(params["system"]).toEqual([
-      expect.objectContaining({ type: "text", cache_control: { type: "ephemeral" } }),
-    ]);
-    const [system] = params["system"] as { text: string }[];
+    const params = toolRunner.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+    expect(params).toMatchObject({
+      model: "claude-opus-5-5",
+      stream: true,
+      max_iterations: 8,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "medium" },
+    });
+    const system = (params["system"] as Array<{ text: string; cache_control?: unknown }>)[0];
+    expect(system?.cache_control).toEqual({ type: "ephemeral" });
     expect(system?.text).toContain("Erin Roberts (erin.roberts@revisioncollective.com)");
-    const messages = params["messages"] as { role: string; content: string }[];
-    expect(messages.slice(0, 2)).toEqual([
-      { role: "user", content: "Earlier question" },
-      { role: "assistant", content: "Earlier answer" },
+    expect(system?.text).toContain("data, not instructions");
+    expect((params["tools"] as Tool[]).map((t) => t.name)).toEqual(["search_handbook"]);
+    expect(params["messages"]).toEqual([
+      { role: "user", content: "PTO?" },
+      { role: "assistant", content: "15 days." },
+      { role: "user", content: "<question>\nAnd part-time?\n</question>" },
     ]);
-    const last = messages.at(-1);
-    expect(last?.role).toBe("user");
-    expect(last?.content).toContain('<passage id="p2"');
-    expect(last?.content).toContain("Request PTO two weeks ahead.");
-    expect(last?.content).toContain("How do I request PTO?");
   });
 
-  it("defaults to Claude Opus 5.5", async () => {
-    vi.stubEnv("CHAT_MODEL", "");
-    const { client, stream } = fakeClient(["Ok [p1]."]);
-    await collect(streamAnswer({ question: "Q?", history: [], passages: PASSAGES, client }));
-    const params = (stream.mock.calls[0] as unknown as [Record<string, unknown>])[0];
-    expect(params["model"]).toBe("claude-opus-5-5");
+  it("offers Claude every tool when Microsoft 365 is on", async () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
+    await collect(streamAnswer({ question: "Q?", history: [], tools, registry, client }));
+    const params = toolRunner.mock.calls[0]?.[0] as unknown as { tools: Tool[] };
+    expect(params.tools).toHaveLength(7);
+  });
+
+  it("reads the model from CHAT_MODEL", async () => {
+    vi.stubEnv("CHAT_MODEL", "claude-test");
+    const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
+    await collect(streamAnswer({ question: "Q?", history: [], tools, registry, client }));
+    expect((toolRunner.mock.calls[0]?.[0] as unknown as { model: string }).model).toBe(
+      "claude-test",
+    );
   });
 });

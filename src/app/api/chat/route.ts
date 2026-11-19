@@ -4,10 +4,13 @@ import { CHAT_RATE_LIMITS, consumeChatQuota, type QuotaResult } from "@/db/rate-
 import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
-import { getPassageProvider, type Passage } from "@/lib/chat/passages";
-import { checkTopic, OFF_TOPIC, OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
+import { getPassageProvider } from "@/lib/chat/passages";
+import { SourceRegistry } from "@/lib/chat/sources";
+import { chatTools } from "@/lib/chat/tools";
+import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
 import { type ChatEvent, type ChatOutcome, encodeChatEvent } from "@/lib/chat-protocol";
 import { searchTopics } from "@/lib/chat-topics";
+import { getGraphAccessToken } from "@/lib/graph-token";
 import { describeError } from "@/lib/safe-error";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
 
@@ -34,7 +37,7 @@ function overLimitMessage(result: Extract<QuotaResult, { allowed: false }>): str
 }
 
 async function* offTopicReply(): AsyncGenerator<ChatEvent> {
-  yield { type: "delta", text: OFF_TOPIC_ANSWER };
+  yield { type: "delta", text: offTopicAnswer() };
   yield { type: "done", outcome: "off-topic", sources: [] };
 }
 
@@ -43,7 +46,8 @@ const UNCLASSIFIED = "unclassified";
 
 /**
  * The question's topic, or "unclassified" if the check failed. Without a classification the
- * question goes on to search, where the relevance threshold still turns away unrelated ones.
+ * question still goes to Claude, and the handbook's relevance threshold and the grounding
+ * rules still turn away unrelated ones.
  */
 async function topicOf(request: ChatRequest): Promise<string> {
   try {
@@ -132,18 +136,15 @@ export async function POST(request: Request): Promise<Response> {
   const topic = await topicOf(parsed.data);
   if (topic === OFF_TOPIC) return ndjson(topic, offTopicReply);
 
-  let passages: Passage[];
-  try {
-    passages = await getPassageProvider()(parsed.data.question, searchTopics(topic));
-  } catch (err) {
-    const correlationId = newCorrelationId();
-    logFailure(correlationId, "retrieve passages", err);
-    await recordOutcome({ topic, outcome: "error", citedSections: [] });
-    return NextResponse.json(
-      { error: "Could not search the handbook", correlationId },
-      { status: 500 },
-    );
-  }
-
-  return ndjson(topic, () => streamAnswer({ ...parsed.data, passages, client: chatClient() }));
+  // A fresh registry per request: citations can only point at what this answer's tools found.
+  const registry = new SourceRegistry();
+  const tools = chatTools({
+    registry,
+    passages: getPassageProvider(),
+    handbookTopics: searchTopics(topic),
+    graphToken: () => getGraphAccessToken(),
+  });
+  return ndjson(topic, () =>
+    streamAnswer({ ...parsed.data, tools, registry, client: chatClient() }),
+  );
 }

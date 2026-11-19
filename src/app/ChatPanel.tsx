@@ -13,7 +13,7 @@ import {
   type Citation,
   readChatStream,
 } from "@/lib/chat-protocol";
-import { CHAT_TOPICS, EXAMPLE_QUESTIONS } from "@/lib/chat-topics";
+import type { ChatTopic } from "@/lib/chat-topics";
 import { CHAT_QUESTION_MAX } from "@/lib/validation";
 
 type Exchange = {
@@ -46,17 +46,31 @@ async function errorFromResponse(res: Response): Promise<ChatStreamError> {
   );
 }
 
-function ExampleQuestions({ onAsk }: { onAsk: (question: string) => void }) {
+/** What the server is answering; Microsoft 365 topics depend on `M365_TOOLS`. */
+export interface ChatScope {
+  topics: ChatTopic[];
+  examples: string[];
+  /** Whether answers can come from the user's own Microsoft 365 data. */
+  m365: boolean;
+}
+
+function ExampleQuestions({
+  scope,
+  onAsk,
+}: {
+  scope: ChatScope;
+  onAsk: (question: string) => void;
+}) {
   return (
     <EmptyState icon="ai-brain" title="Ask About Working at Ingage">
       <span className="flex flex-col items-center gap-4">
         <span>
           Ask a question in plain English and get a short answer with a link to the section it came
           from. I can help with:{" "}
-          {CHAT_TOPICS.map((topic) => `${topic.label}: ${topic.description}`).join(" ")}
+          {scope.topics.map((topic) => `${topic.label}: ${topic.description}`).join(" ")}
         </span>
         <span className="flex flex-col items-stretch gap-2 sm:items-center">
-          {EXAMPLE_QUESTIONS.map((question) => (
+          {scope.examples.map((question) => (
             <button
               key={question}
               type="button"
@@ -123,7 +137,7 @@ function ExchangeView({ exchange, onRetry }: { exchange: Exchange; onRetry: () =
         <Card padding={20} className="flex flex-col gap-4">
           {exchange.status === "pending" ? (
             <p role="status" style={{ color: "var(--text-muted)" }}>
-              Searching the handbook…
+              Searching…
             </p>
           ) : (
             <p
@@ -154,7 +168,7 @@ function ExchangeView({ exchange, onRetry }: { exchange: Exchange; onRetry: () =
  * The chat: questions and streamed answers from /api/chat. The conversation lives only in this
  * component's state; nothing is stored in the browser or on the server, so a reload clears it.
  */
-export default function ChatPanel() {
+export default function ChatPanel({ scope }: { scope: ChatScope }) {
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [draft, setDraft] = useState("");
   const [fieldError, setFieldError] = useState<string | undefined>();
@@ -255,7 +269,7 @@ export default function ChatPanel() {
       ) : null}
       <div className="flex flex-1 flex-col gap-8" aria-live="polite">
         {exchanges.length === 0 ? (
-          <ExampleQuestions onAsk={(question) => void ask(question)} />
+          <ExampleQuestions scope={scope} onAsk={(question) => void ask(question)} />
         ) : (
           exchanges.map((exchange) => (
             <ExchangeView
@@ -294,8 +308,10 @@ export default function ChatPanel() {
           </Button>
         </div>
         <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>
-          Answers come from the handbook and can be wrong. HR is the authority, and this isn't legal
-          advice. Nothing you ask is saved. Questions for HR: {HR_CONTACT.name},{" "}
+          {scope.m365
+            ? "Answers come from the handbook and your Microsoft 365 data and can be wrong. HR is the authority on policy, and this isn't legal advice."
+            : "Answers come from the handbook and can be wrong. HR is the authority, and this isn't legal advice."}{" "}
+          Nothing you ask is saved. Questions for HR: {HR_CONTACT.name},{" "}
           <a href={`mailto:${HR_CONTACT.email}`}>{HR_CONTACT.email}</a>.
         </p>
       </div>

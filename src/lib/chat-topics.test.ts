@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { type ChatTopic, searchTopics } from "@/lib/chat-topics";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  type ChatTopic,
+  chatTopics,
+  exampleQuestions,
+  m365Enabled,
+  searchTopics,
+} from "@/lib/chat-topics";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const TOPICS: ChatTopic[] = [
   { id: "handbook", label: "Handbook", description: "policies." },
@@ -17,5 +27,28 @@ describe("searchTopics", () => {
 
   it("searches every topic for an id it doesn't know", () => {
     expect(searchTopics("retired-topic", TOPICS)).toEqual(["handbook", "dev-onboarding"]);
+  });
+});
+
+describe("Microsoft 365 topics", () => {
+  it("offers only the knowledge topics while M365_TOOLS is off", () => {
+    vi.stubEnv("M365_TOOLS", "");
+    expect(m365Enabled()).toBe(false);
+    expect(chatTopics().map((t) => t.id)).toEqual(["handbook"]);
+    expect(exampleQuestions().join(" ")).not.toContain("Teams");
+  });
+
+  it("adds the work topic and a Teams example when M365_TOOLS is enabled", () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    expect(m365Enabled()).toBe(true);
+    expect(chatTopics().map((t) => t.id)).toEqual(["handbook", "work"]);
+    expect(exampleQuestions()).toContain(
+      "What did my client say about the deadline in Teams this week?",
+    );
+  });
+
+  it("never searches the knowledge store for the work topic", () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    expect(searchTopics("work")).toEqual(["handbook"]);
   });
 });
