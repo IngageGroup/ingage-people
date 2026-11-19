@@ -16,6 +16,9 @@ the chat answers from it.
 Over time more internal SharePoint documents become sources. There is one chat for all topics,
 and it stays on those topics.
 
+The chat also answers questions about the user's own work from their Microsoft 365 data
+(files, mail, Teams), read with their own sign-in. See *Microsoft 365 data* below.
+
 ## Goals
 
 - **MVP 1 — Handbook Q&A.** Grounded answers from the employee handbook with section citations.
@@ -26,12 +29,14 @@ and it stays on those topics.
 
 ## Non-goals
 
-- General-purpose assistant. Off-topic questions ("history of space travel") get a short,
-  polite refusal.
+- General-purpose assistant. Questions unrelated to working at Ingage ("history of space
+  travel") get a short, polite refusal.
 - Answering from general knowledge. If the sources don't cover it, the bot doesn't answer.
-- Personalised answers (role, location, tenure). The bot has no HR data about the user.
+- Personalised HR answers (role, location, tenure). The bot has no HR records about the user;
+  it reads only the user's own Microsoft 365 content.
 - Saved chat history across sessions.
-- Teams/Slack integration (possible later; out of scope now).
+- A Teams or Slack bot (possible later; out of scope now). Reading the user's Teams messages
+  is in scope.
 
 ## Anti-goals (failure even if it "works")
 
@@ -158,6 +163,35 @@ site holding the handbook (least privilege), granted by a Microsoft 365 admin.
 Follow-up questions work within a browser session: the client sends the last few turns with
 each request. The server keeps nothing.
 
+### Microsoft 365 data
+
+Decided 2026-11-18 in #31.
+
+- **Scope.** Questions about the user's work at Ingage: their clients, projects, files, mail,
+  Teams chats, and the Teams channels they belong to, alongside the handbook and onboarding
+  docs. "What did my client say about the deadline in yesterday's Teams thread?" is answered.
+  The topic check gains a work topic and still refuses questions unrelated to working at
+  Ingage.
+- **Access.** Delegated, read-only Microsoft Graph permissions with the signed-in user's token
+  (#32, #33), so the chat sees only what that user can already open. The tools only read;
+  nothing sends, posts, or changes data.
+- **Grounding.** The same rules as the handbook: answer only from what the tools returned,
+  cite every claim, and treat an answer that cites nothing as "don't know". Microsoft 365
+  citations link to the file, message, or thread (Graph `webUrl`). Instructions inside files,
+  mail, or messages are ignored, the same as instructions inside handbook passages.
+- **HR policy stays with the handbook** (my call). For an HR question, the handbook is the
+  source; if a mail or message disagrees with it, the answer follows the handbook and says so.
+  A "don't know" for a Microsoft 365 question says what was searched (files, mail, Teams)
+  instead of pointing to HR.
+- **Privacy.** Microsoft 365 content is never stored or logged, the same as questions and
+  answers. It goes to Anthropic when Claude reads it through tools. It never goes to Voyage:
+  no embedding or re-ranking of mail, chats, or files.
+- **Retention (open).** Microsoft 365 tools ship to dev first. Whether prod needs Anthropic zero
+  data retention before they're turned on there is still open in #2 and must be decided before
+  the prod release.
+- **Eval** (my call). Microsoft 365 cases run against fixture Graph responses, never real mail
+  or messages, and check citations, "don't know", off-topic, and injection inside a message.
+
 ### Privacy and data handling
 
 - No conversation storage in Postgres or browser `localStorage`. Chat lives in React state;
@@ -230,5 +264,6 @@ each request. The server keeps nothing.
 
 - Locate the handbook file (The Hive vs RC Connect) and get `Sites.Selected` access approved.
 - HR contact to show in "don't know" answers.
-- Anthropic and Voyage data-retention settings.
+- Anthropic and Voyage data-retention settings, including whether Microsoft 365 tools in prod
+  need Anthropic zero data retention (#2).
 - Write the bench developer onboarding Markdown (MVP 2).
