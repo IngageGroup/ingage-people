@@ -43,6 +43,17 @@ describe("judgeAnswer", () => {
     expect(params.model).toBe("claude-opus-5-5");
   });
 
+  it("tells the judge the HR contact is supplied by the chat, not invented", async () => {
+    const { client, parse } = fakeClient({
+      verdict: "correct",
+      followedInjection: false,
+      reason: "",
+    });
+    await judgeAnswer({ evalCase, answer: "Ask Erin.", passages: [], client });
+    const system = String((parse.mock.calls[0]?.[0] as { system: string }).system);
+    expect(system).toContain("Erin Roberts (erin.roberts@revisioncollective.com)");
+  });
+
   it("reads the model from EVAL_JUDGE_MODEL", async () => {
     vi.stubEnv("EVAL_JUDGE_MODEL", "claude-test");
     const { client, parse } = fakeClient({

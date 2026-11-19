@@ -60,15 +60,18 @@ src/
 │   └── migrate.ts                       # runMigrations() under an advisory lock
 ├── lib/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION / HR_CONTACT
-│   ├── chat/answer.ts                   # streamAnswer: Claude call, [pN] markers → citations
-│   ├── chat/markers.ts                  # Strips [pN] markers from streamed text, even split
+│   ├── chat/answer.ts                   # streamAnswer: Claude tool loop, [id] markers → citations
+│   ├── chat/markers.ts                  # Strips [p1]/[f1]/[m1]/[t1] markers from the stream, even split
+│   ├── chat/tools.ts                    # search_handbook + read-only Microsoft 365 tools
+│   ├── chat/sources.ts                  # SourceRegistry: per-answer ids → citations and sources
 │   ├── chat/passages.ts                 # Passage type, PassageProvider (retrieve → re-rank)
 │   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
 │   ├── chat-history.ts                  # Earlier turns sent with follow-up questions
-│   ├── chat-topics.ts                   # Topics (empty state + topic check) and examples
+│   ├── chat-topics.ts                   # Topics and examples; work topic only with M365_TOOLS
 │   ├── chat/topic-check.ts              # Haiku classifier: topic id or off-topic
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
 │   ├── graph-token.ts                   # Graph scopes, token refresh, getGraphAccessToken
+│   ├── graph/                           # Graph client (retries, safe errors), files, mail, Teams
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
 ├── knowledge/                           # Ingest pipeline (`pnpm ingest`)
@@ -163,24 +166,35 @@ Use the Ingage components before writing custom markup.
   (`delta`, `citation`, then one `done`, or one `error`). Failures before streaming are plain
   JSON `{ error, correlationId }`. The UI keeps the conversation in React state only (no
   `localStorage`) and sends at most `CHAT_HISTORY_MAX_TURNS` earlier turns.
-- **Chat answers (`src/lib/chat/`):** the route gets passages from `getPassageProvider()`,
-  numbered `p1…`, and `streamAnswer` sends them with the question to Claude (`CHAT_MODEL`,
-  default `claude-opus-5-5`; cached system prompt). Claude cites `[pN]`; the markers are
-  stripped from the stream and become `citation` events. No passages, or an answer citing
-  none, is `dont-know` (Claude isn't called when there are no passages). Never log question
-  or answer text.
-- **Topic check (`src/lib/chat/topic-check.ts`):** before search, Claude Haiku
-  (`CHAT_TOPIC_MODEL`, no thinking, effort low, structured output) classifies the question,
-  with the last two turns for follow-ups, into a `CHAT_TOPICS` id or `off-topic`. Off-topic
-  (or a refusal) gets `OFF_TOPIC_ANSWER` with outcome `off-topic`; no search, no answer call.
-  If the check fails, the route logs it and searches every topic (`searchTopics`); the
-  relevance threshold still turns away unrelated questions. Adds about 1 s per question.
-- **Passages (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`):** retrieve over the
-  topic the check picked (all `CHAT_TOPICS` if it failed), re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
-  top 5 scoring at least `SELECT_CONFIG.minScore` (0.55, set from the eval). None above it
-  → don't-know without Claude. Voyage calls from the chat use 2 attempts and an 8 s timeout;
-  a Voyage or DB failure is a 500 with a correlation id, never an ungrounded answer. Locally
-  the chat only knows what you've ingested: `pnpm ingest --source handbook` with the sample.
+- **Chat answers (`src/lib/chat/`):** after the topic check, `streamAnswer` runs Claude
+  (`CHAT_MODEL`, default `claude-opus-5-5`; cached system prompt) through the SDK tool runner
+  (`stream: true`, `max_iterations: 8`) with `chatTools()`. Each passage or item a tool
+  returns is registered in a per-request `SourceRegistry` as `p1…`/`f1…`/`m1…`/`t1…`; Claude
+  cites `[id]`, the markers are stripped from the stream, and registered ids become
+  `citation` events (unknown ids are ignored). An answer citing none is `dont-know`; a run
+  that ends on `tool_use` or `max_tokens` is the cut-off error. Never log question, answer,
+  or tool-result text.
+- **Topic check (`src/lib/chat/topic-check.ts`):** first, Claude Haiku (`CHAT_TOPIC_MODEL`,
+  no thinking, effort low, structured output) classifies the question, with the last two
+  turns for follow-ups, into a `chatTopics()` id or `off-topic`. Off-topic (or a refusal)
+  gets `offTopicAnswer()` with outcome `off-topic`; no answer call. If the check fails, the
+  route logs it and answers anyway with every knowledge topic (`searchTopics`). Adds about
+  1 s per question.
+- **Chat tools (`src/lib/chat/tools.ts`):** `search_handbook` wraps the passage provider
+  (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`): retrieve over the knowledge
+  topic the check picked, re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`),
+  keep the top 5 scoring at least `SELECT_CONFIG.minScore` (0.55, set from the eval); none
+  above it → "No handbook passages matched." With `M365_TOOLS=enabled` (dev only until #2),
+  six read-only Graph tools search and read the user's files, mail, and Teams with
+  `getGraphAccessToken()`; the work topic, its example, and the UI copy follow the same
+  setting (`m365Enabled()`, read on the server). Tool failures are logged with
+  `describeError` and returned to Claude as `ToolError` messages, never raw error text.
+  Locally the chat only knows what you've ingested: `pnpm ingest --source handbook`.
+- **Graph (`src/lib/graph/`):** `graphRequest` retries 429/5xx up to 3 times, honours
+  `Retry-After` up to 5 s, and throws `GraphError` with method, path (no query), status,
+  and Graph's error code only. Searches use `POST /search/query` so search text never lands
+  in a URL (HTTP telemetry records URLs). Office files are read as `?format=pdf` through
+  `parsePdf`; any tool text is capped at `TOOL_TEXT_MAX` (20 000 chars).
 - **Knowledge store (`src/db/knowledge.ts`):** sources → versions → chunks.
   `replaceSourceContent` writes a new version's chunks, switches the source's
   `active_version_id`, and deletes the old chunks in one transaction; on failure the old
@@ -225,13 +239,15 @@ Use the Ingage components before writing custom markup.
   holds no user content. Create Claude clients for chat with `chatClient()` (log level pinned
   to "warn"). Azure Monitor options live in `src/lib/telemetry.ts` (no Postgres parameter
   values, no console capture). Manual check: README 10.1.
-- **Eval (`src/eval/`, `evals/handbook.jsonl`):** `pnpm eval` runs every case through the
-  chat's own steps (`checkTopic`, `chatSearch` + `selectPassages`, `streamAnswer`), judges
+- **Eval (`src/eval/`, `evals/handbook.jsonl`, `evals/m365.jsonl`):** `pnpm eval` runs every
+  case through the chat's own steps (`checkTopic`, `chatSearch` + `selectPassages`, the agent
+  in `streamAnswer`), judges
   answers with Claude (`EVAL_JUDGE_MODEL`) against the expected facts and the passages, and
   prints retrieval hit rates, answer grades, don't-know precision/recall, topic-check and
   injection results, and a threshold sweep. It calls Claude and Voyage (costs money), so it
   runs by hand, not in CI. Cases carry short facts, not handbook text. Re-run it before
-  changing prompts, chunking, models, or thresholds.
+  changing prompts, chunking, models, or thresholds. `pnpm eval --cases evals/m365.jsonl`
+  turns the Microsoft 365 tools on against made-up Graph data (`src/eval/m365-fixtures.ts`).
 - **Errors:** route DB failures log `[api/<route> <correlationId>] <operation> failed` and
   return `{ error, correlationId }` with status 500. Validation failures return 400 with the
   first Zod message.

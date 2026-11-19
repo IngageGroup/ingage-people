@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkTopic, OFF_TOPIC_ANSWER, type TopicClient } from "@/lib/chat/topic-check";
+import { checkTopic, offTopicAnswer, type TopicClient } from "@/lib/chat/topic-check";
 
 function fakeClient(result: { topic: string } | null, stopReason = "end_turn") {
   const parse = vi.fn(async (_params: Record<string, unknown>) => ({
@@ -95,8 +95,33 @@ describe("checkTopic", () => {
   });
 });
 
-describe("OFF_TOPIC_ANSWER", () => {
+describe("offTopicAnswer", () => {
   it("lists what the chat can help with", () => {
-    expect(OFF_TOPIC_ANSWER).toContain("Employee Handbook");
+    expect(offTopicAnswer()).toContain("Employee Handbook");
+    expect(offTopicAnswer()).not.toContain("Your work");
+  });
+
+  it("includes the work topic when Microsoft 365 tools are on", () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    expect(offTopicAnswer()).toContain("Your work");
+  });
+});
+
+describe("checkTopic with Microsoft 365 tools on", () => {
+  it("can classify a question as the work topic", async () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    const { client, parse } = fakeClient({ topic: "work" });
+    expect(await checkTopic({ question: "What did Acme say?", history: [], client })).toBe("work");
+    const params = parse.mock.calls[0]?.[0] as { system: string };
+    expect(params.system).toContain("- work: Your work:");
+    expect(params.system).toContain(
+      "Writing tasks (poems, jokes, drafts, rewrites) are off-topic even when they're about the user's own files, mail, or messages.",
+    );
+  });
+
+  it("leaves the work topic out of the prompt while the tools are off", async () => {
+    const { client, parse } = fakeClient({ topic: "handbook" });
+    await checkTopic({ question: "Q?", history: [], client });
+    expect((parse.mock.calls[0]?.[0] as { system: string }).system).not.toContain("- work:");
   });
 });

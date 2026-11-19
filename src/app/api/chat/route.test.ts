@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEvent, ChatStreamError, readChatStream } from "@/lib/chat-protocol";
 
-const { emailMock, streamMock, parseMock, passagesMock, quotaMock, recordMock } = vi.hoisted(
+const { emailMock, toolRunnerMock, parseMock, passagesMock, quotaMock, recordMock } = vi.hoisted(
   () => ({
     emailMock: vi.fn(),
     recordMock: vi.fn(),
     quotaMock: vi.fn(),
-    streamMock: vi.fn(),
+    toolRunnerMock: vi.fn(),
     parseMock: vi.fn(),
     passagesMock: vi.fn(),
   }),
@@ -19,15 +19,20 @@ vi.mock("@/db/rate-limit", () => ({
 }));
 vi.mock("@/db/chat-stats", () => ({ recordChatOutcome: recordMock }));
 vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }));
+vi.mock("@/lib/graph-token", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getGraphAccessToken: async () => M365_FIXTURE_TOKEN,
+}));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
-    beta = { messages: { stream: streamMock } };
+    beta = { messages: { toolRunner: toolRunnerMock } };
     messages = { parse: parseMock };
   },
 }));
 
 import { POST } from "@/app/api/chat/route";
-import { OFF_TOPIC_ANSWER } from "@/lib/chat/topic-check";
+import { M365_FIXTURE_TOKEN, m365FixtureFetch } from "@/eval/m365-fixtures";
+import { offTopicAnswer } from "@/lib/chat/topic-check";
 
 const PASSAGE = {
   id: "p1",
@@ -38,16 +43,34 @@ const PASSAGE = {
   lastUpdated: "2026-10-01",
 };
 
+type Tool = { name: string; run: (input: Record<string, string>) => unknown };
+
+/**
+ * Claude searches the handbook for the question, then streams `chunks` (optionally failing
+ * after them). Stands in for the SDK tool runner, which runs tools between turns.
+ */
 function claudeSays(chunks: string[], failAfter?: Error) {
-  streamMock.mockImplementation(() => ({
-    async *[Symbol.asyncIterator]() {
-      for (const text of chunks) {
-        yield { type: "content_block_delta", delta: { type: "text_delta", text } };
-      }
-      if (failAfter) throw failAfter;
-    },
-    finalMessage: async () => ({ stop_reason: "end_turn" }),
-  }));
+  toolRunnerMock.mockImplementation(
+    (params: { tools: Tool[]; messages: Array<{ content: string }> }) => ({
+      async *[Symbol.asyncIterator]() {
+        const search = params.tools.find((t) => t.name === "search_handbook");
+        const question = params.messages
+          .at(-1)
+          ?.content.replace(/<\/?question>/g, "")
+          .trim();
+        await Promise.resolve(search?.run({ query: question ?? "" })).catch(() => undefined);
+        yield {
+          async *[Symbol.asyncIterator]() {
+            for (const text of chunks) {
+              yield { type: "content_block_delta", delta: { type: "text_delta", text } };
+            }
+            if (failAfter) throw failAfter;
+          },
+          finalMessage: async () => ({ stop_reason: "end_turn" }),
+        };
+      },
+    }),
+  );
 }
 
 function post(body: unknown): Request {
@@ -75,12 +98,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   passagesMock.mockReset();
   parseMock.mockReset();
   quotaMock.mockReset();
   recordMock.mockReset();
   emailMock.mockReset();
-  streamMock.mockReset();
+  toolRunnerMock.mockReset();
 });
 
 describe("POST /api/chat", () => {
@@ -94,7 +119,7 @@ describe("POST /api/chat", () => {
     emailMock.mockResolvedValue(null);
     const res = await POST(post({ question: "Budget?" }));
     expect(res.status).toBe(401);
-    expect(streamMock).not.toHaveBeenCalled();
+    expect(toolRunnerMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 for a body that isn't JSON", async () => {
@@ -128,10 +153,10 @@ describe("POST /api/chat", () => {
     expect(all.at(-1)).toMatchObject({ type: "done", outcome: "answered" });
   });
 
-  it("answers don't-know without calling Claude when no passage is relevant enough", async () => {
+  it("answers don't-know when no passage is relevant enough", async () => {
     passagesMock.mockResolvedValue([]);
-    const all = await events(await POST(post({ question: "History of space travel?" })));
-    expect(streamMock).not.toHaveBeenCalled();
+    claudeSays(["The handbook doesn't cover that."]);
+    const all = await events(await POST(post({ question: "Dogs at the office?" })));
     expect(all.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
   });
 
@@ -153,21 +178,21 @@ describe("POST /api/chat", () => {
     expect(log).not.toContain("secret training budget");
   });
 
-  it("returns 500 with a reference when search or re-ranking fails", async () => {
+  it("turns a failed search into a tool error for Claude, logged without the question", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     passagesMock.mockRejectedValue(
       Object.assign(new Error("invalid input: my private budget question"), { status: 422 }),
     );
+    claudeSays(["I couldn't search the handbook just now."]);
 
     const res = await POST(post({ question: "my private budget question" }));
+    const all = await events(res);
 
+    expect(res.status).toBe(200);
+    expect(all.at(-1)).toMatchObject({ type: "done", outcome: "dont-know" });
     const log = logged.mock.calls.flat().map(String).join(" ");
-    expect(log).toMatch(/\[api\/chat [0-9a-f]{8}\] retrieve passages failed: Error status=422/);
+    expect(log).toContain("[chat-tools] search_handbook failed: Error status=422");
     expect(log).not.toContain("private");
-    expect(res.status).toBe(500);
-    const body = (await res.json()) as { error: string; correlationId: string };
-    expect(body.error).toBe("Could not search the handbook");
-    expect(body.correlationId).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("politely refuses an off-topic question without searching or answering", async () => {
@@ -176,11 +201,11 @@ describe("POST /api/chat", () => {
     const all = await events(await POST(post({ question: "What's the capital of France?" })));
 
     expect(all).toEqual([
-      { type: "delta", text: OFF_TOPIC_ANSWER },
+      { type: "delta", text: offTopicAnswer() },
       { type: "done", outcome: "off-topic", sources: [] },
     ]);
     expect(passagesMock).not.toHaveBeenCalled();
-    expect(streamMock).not.toHaveBeenCalled();
+    expect(toolRunnerMock).not.toHaveBeenCalled();
   });
 
   it("falls back to searching when the topic check fails, without logging the question", async () => {
@@ -263,6 +288,32 @@ describe("POST /api/chat", () => {
       });
     });
 
+    it("counts handbook sections only, never Microsoft 365 senders or folders", async () => {
+      vi.stubEnv("M365_TOOLS", "enabled");
+      vi.stubGlobal("fetch", m365FixtureFetch);
+      toolRunnerMock.mockImplementation((params: { tools: Tool[] }) => ({
+        async *[Symbol.asyncIterator]() {
+          const run = (name: string) => params.tools.find((t) => t.name === name)?.run;
+          await run("search_handbook")?.({ query: "training budget" });
+          await run("search_mail")?.({ query: "training spend cap" });
+          yield {
+            async *[Symbol.asyncIterator]() {
+              const text = "Your budget is set [p1], and Sam capped Q1 at $4,000 [m1].";
+              yield { type: "content_block_delta", delta: { type: "text_delta", text } };
+            },
+            finalMessage: async () => ({ stop_reason: "end_turn" }),
+          };
+        },
+      }));
+      const all = await events(await POST(post({ question: "Budget?" })));
+      expect(all.filter((e) => e.type === "citation")).toHaveLength(2);
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "handbook",
+        outcome: "answered",
+        citedSections: [["Training Budget"]],
+      });
+    });
+
     it("records off-topic questions", async () => {
       parseMock.mockResolvedValue({
         stop_reason: "end_turn",
@@ -280,6 +331,7 @@ describe("POST /api/chat", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       parseMock.mockRejectedValue(new Error("overloaded"));
       passagesMock.mockResolvedValue([]);
+      claudeSays(["The handbook doesn't cover that."]);
       await events(await POST(post({ question: "Dogs at the office?" })));
       expect(recordMock).toHaveBeenCalledWith({
         topic: "unclassified",
@@ -301,13 +353,14 @@ describe("POST /api/chat", () => {
       });
     });
 
-    it("records a failed search as an error", async () => {
+    it("records a failed search as don't-know", async () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       passagesMock.mockRejectedValue(new Error("db down"));
-      expect((await POST(post({ question: "Budget?" }))).status).toBe(500);
+      claudeSays(["I couldn't search the handbook just now."]);
+      await events(await POST(post({ question: "Budget?" })));
       expect(recordMock).toHaveBeenCalledWith({
         topic: "handbook",
-        outcome: "error",
+        outcome: "dont-know",
         citedSections: [],
       });
     });
