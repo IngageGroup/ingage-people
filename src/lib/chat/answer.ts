@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { HR_CONTACT } from "@/lib/app-config";
 import { createMarkerFilter } from "@/lib/chat/markers";
 import type { Passage } from "@/lib/chat/passages";
 import type { ChatEvent, ChatSource, Citation } from "@/lib/chat-protocol";
@@ -8,10 +9,11 @@ export type AnswerClient = Pick<Anthropic, "beta">;
 
 export const DEFAULT_CHAT_MODEL = "claude-opus-5-5";
 
-export const NO_PASSAGES_ANSWER =
-  "I couldn't find this in the handbook, so I can't answer it. Please ask HR.";
+const HR = `${HR_CONTACT.name}, ${HR_CONTACT.email}`;
 
-const REFUSAL_ERROR = "This question can't be answered here. Ask HR instead.";
+export const NO_PASSAGES_ANSWER = `I couldn't find this in the handbook, so I can't answer it. Please ask HR: ${HR}.`;
+
+const REFUSAL_ERROR = `This question can't be answered here. Ask HR instead: ${HR}.`;
 const CUT_OFF_ERROR = "The answer was cut off. Try again.";
 
 /** Stable across requests so it can be cached; everything per-request goes in the messages. */
@@ -20,6 +22,7 @@ const SYSTEM_PROMPT = `You answer Ingage employees' questions about working at I
 Rules:
 - Answer only from the passages in the current message. Don't use general knowledge or assumptions about typical company policies.
 - After each sentence that relies on a passage, cite it with its id in square brackets, for example [p2]. Cite only ids that appear in the passages.
+- HR contact: ${HR_CONTACT.name} (${HR_CONTACT.email}). Whenever you point someone to HR, give this contact.
 - If the passages don't answer the question, say briefly that the handbook doesn't cover it and suggest asking HR. Don't cite anything in that case.
 - If the answer depends on the person's situation (role, location, tenure, or other details you don't have), say what the passages say in general, then say that HR can confirm what applies to them.
 - Keep answers short: a few sentences in plain English, no headings.

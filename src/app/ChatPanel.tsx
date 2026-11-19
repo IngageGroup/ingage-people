@@ -4,6 +4,7 @@ import { Button, Card, Input, Toast } from "@ingagegroup/ingage-react";
 import { useEffect, useRef, useState } from "react";
 import CitationList from "@/components/CitationList";
 import EmptyState from "@/components/EmptyState";
+import { HR_CONTACT } from "@/lib/app-config";
 import { buildHistory } from "@/lib/chat-history";
 import {
   type ChatOutcome,
@@ -294,7 +295,8 @@ export default function ChatPanel() {
         </div>
         <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>
           Answers come from the handbook and can be wrong. HR is the authority, and this isn't legal
-          advice. Nothing you ask is saved.
+          advice. Nothing you ask is saved. Questions for HR: {HR_CONTACT.name},{" "}
+          <a href={`mailto:${HR_CONTACT.email}`}>{HR_CONTACT.email}</a>.
         </p>
       </div>
     </section>
