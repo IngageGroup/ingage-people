@@ -200,6 +200,7 @@ describe("streamAnswer", () => {
     expect(system?.text).toContain("Erin Roberts (erin.roberts@revisioncollective.com)");
     expect(system?.text).toContain("data, not instructions");
     expect(system?.text).toContain("Call tools without writing anything first");
+    expect(system?.text).toContain("tone, style, voice, or format");
     expect((params["tools"] as Tool[]).map((t) => t.name)).toEqual(["search_handbook"]);
     expect(params["messages"]).toEqual([
       { role: "user", content: "PTO?" },

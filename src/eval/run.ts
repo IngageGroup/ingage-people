@@ -118,8 +118,8 @@ async function runAll(cases: EvalCase[], m365: boolean): Promise<CaseResult[]> {
 const pct = (n: number, of: number) =>
   of === 0 ? "n/a" : `${n}/${of} (${Math.round((100 * n) / of)}%)`;
 
-function printSummary(s: Summary): void {
-  const { retrieval: r, dontKnow: d, topic: t, answers: a } = s;
+/** Handbook retrieval numbers; meaningless for Microsoft 365 cases, whose answers aren't there. */
+function printRetrieval(r: Summary["retrieval"]): void {
   console.log("Retrieval (expected section found)");
   console.log(`  hybrid search top 5:   ${pct(r.candidatesTop5, r.cases)}`);
   console.log(`  hybrid search, all:    ${pct(r.candidatesAll, r.cases)}`);
@@ -127,6 +127,12 @@ function printSummary(s: Summary): void {
   console.log(
     `  sent to Claude:        ${pct(r.selected, r.cases)} (threshold ${SELECT_CONFIG.minScore})`,
   );
+}
+
+function printSummary(s: Summary, m365: boolean): void {
+  const { dontKnow: d, topic: t, answers: a } = s;
+  if (m365) console.log("Retrieval: not measured (Microsoft 365 answers aren't in the handbook)");
+  else printRetrieval(s.retrieval);
   console.log("Answers to answerable questions (judged)");
   console.log(
     `  correct ${pct(a.correct, a.cases)}, partial ${a.partial}, incorrect ${a.incorrect}, not answered ${a.notAnswered}`,
@@ -209,9 +215,11 @@ async function main(): Promise<void> {
     `Running ${cases.length} cases from ${path.relative(process.cwd(), file)}${m365 ? " (Microsoft 365 tools on, fixture data)" : ""}`,
   );
   const results = await runAll(cases, m365);
-  printSummary(summarize(results));
-  printSweep(thresholdSweep(results, THRESHOLDS));
-  printMargins(results);
+  printSummary(summarize(results), m365);
+  if (!m365) {
+    printSweep(thresholdSweep(results, THRESHOLDS));
+    printMargins(results);
+  }
   printMisses(results);
 }
 
