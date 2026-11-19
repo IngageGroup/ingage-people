@@ -142,7 +142,7 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `VOYAGE_RERANK_MODEL` | all | Voyage reranker for chat answers. Defaults to `rerank-3` |
 | `HANDBOOK_LOCAL_PATH` | local | Downloaded copy of the handbook (`.pdf` or `.md`) for `pnpm ingest`; keep it outside the repo and never commit it |
 | `CHAT_TOPIC_MODEL` | all | Claude model that checks each question's topic before search. Defaults to `claude-haiku-5-5` |
-| `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-opus-5-5` |
+| `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-haiku-5-5` |
 | `M365_TOOLS` | dev | `enabled` lets the chat search and read the signed-in user's files, mail, and Teams messages. Leave it unset in prod until #2 records the retention decision |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
 | `ALLOWED_EMAIL_DOMAIN` | all | Only this email domain may sign in. Defaults to `ingagepartners.com` when unset or empty; `*` allows every account in the tenant |

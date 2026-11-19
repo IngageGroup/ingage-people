@@ -188,7 +188,7 @@ describe("streamAnswer", () => {
     );
     const params = toolRunner.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
     expect(params).toMatchObject({
-      model: "claude-opus-5-5",
+      model: "claude-haiku-5-5",
       stream: true,
       max_iterations: 8,
       betas: ["server-side-fallback-2026-07-01"],
