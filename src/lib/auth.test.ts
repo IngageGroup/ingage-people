@@ -1,19 +1,37 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { authMock } = vi.hoisted(() => ({ authMock: vi.fn() }));
+const { authMock, captured } = vi.hoisted(() => ({
+  authMock: vi.fn(),
+  captured: { config: undefined as unknown, provider: undefined as unknown },
+}));
 
 vi.mock("next-auth", () => ({
-  default: () => ({ handlers: {}, auth: authMock }),
+  default: (config: unknown) => {
+    captured.config = config;
+    return { handlers: {}, auth: authMock };
+  },
 }));
 
 vi.mock("next-auth/providers/microsoft-entra-id", () => ({
-  default: () => ({}),
+  default: (options: unknown) => {
+    captured.provider = options;
+    return {};
+  },
 }));
 
 import { getCurrentUserEmail, isAllowedEmail } from "@/lib/auth";
+import type { GraphTokens } from "@/lib/graph-token";
+
+type Token = Record<string, unknown> & { graph?: GraphTokens };
+interface Callbacks {
+  jwt(args: { token: Token; account?: unknown }): Promise<Token | null>;
+  session(args: { session: { user: Record<string, unknown> }; token: Token }): unknown;
+}
+const callbacks = () => (captured.config as { callbacks: Callbacks }).callbacks;
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   authMock.mockReset();
 });
 
@@ -80,5 +98,56 @@ describe("getCurrentUserEmail", () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "");
     authMock.mockResolvedValue(null);
     expect(await getCurrentUserEmail()).toBeNull();
+  });
+});
+
+describe("Graph tokens in the session", () => {
+  const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
+  const graph = (expiresAt: number): GraphTokens => ({
+    accessToken: "access",
+    refreshToken: "refresh",
+    expiresAt,
+  });
+
+  it("asks Entra for the Graph scopes and a refresh token", () => {
+    const { authorization } = captured.provider as {
+      authorization: { params: { scope: string } };
+    };
+    const scopes = authorization.params.scope.split(" ");
+    expect(scopes).toEqual(expect.arrayContaining(["offline_access", "User.Read", "Mail.Read"]));
+  });
+
+  it("stores the tokens from the sign-in response", async () => {
+    const account = { access_token: "a", refresh_token: "r", expires_at: 123 };
+    const token = await callbacks().jwt({ token: { sub: "u1" }, account });
+    expect(token?.graph).toEqual({ accessToken: "a", refreshToken: "r", expiresAt: 123 });
+  });
+
+  it("keeps a valid token as it is", async () => {
+    const token = { sub: "u1", graph: graph(inAnHour()) };
+    expect(await callbacks().jwt({ token })).toEqual(token);
+  });
+
+  it("ends the session when the refresh fails", async () => {
+    vi.stubEnv("AZURE_AD_TENANT_ID", "tenant-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await callbacks().jwt({ token: { sub: "u1", graph: graph(0) } })).toBeNull();
+  });
+
+  it("ends a session that has no Graph token", async () => {
+    expect(await callbacks().jwt({ token: { sub: "u1" } })).toBeNull();
+  });
+
+  it("never puts the tokens in the session sent to the browser", () => {
+    const session = callbacks().session({
+      session: { user: { email: "a@x.com" } },
+      token: { sub: "u1", graph: graph(inAnHour()) },
+    });
+    expect(JSON.stringify(session)).not.toContain("access");
+    expect(JSON.stringify(session)).not.toContain("refresh");
   });
 });

@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { E2E_USER_EMAIL, isAuthBypassed } from "@/lib/e2e-bypass";
+import { freshGraphTokens, GRAPH_SCOPES, graphTokensFromAccount } from "@/lib/graph-token";
+import { describeError } from "@/lib/safe-error";
 
 export const DEFAULT_ALLOWED_EMAIL_DOMAIN = "ingagepartners.com";
 
@@ -29,6 +31,7 @@ export const { handlers, auth } = NextAuth({
       clientId: process.env["AZURE_AD_CLIENT_ID"] ?? "",
       clientSecret: process.env["AZURE_AD_CLIENT_SECRET"] ?? "",
       issuer: `https://login.microsoftonline.com/${process.env["AZURE_AD_TENANT_ID"]}/v2.0`,
+      authorization: { params: { scope: GRAPH_SCOPES.join(" ") } },
     }),
   ],
   pages: {
@@ -38,6 +41,22 @@ export const { handlers, auth } = NextAuth({
     signIn({ profile }) {
       return isAllowedEmail(profile?.email || profile?.preferred_username);
     },
+    /**
+     * Keeps the Graph tokens in the encrypted session cookie and refreshes them before they
+     * expire. Returning null ends the session, so the user signs in again: on a failed
+     * refresh, and for sessions from before the app stored Graph tokens.
+     */
+    async jwt({ token, account }) {
+      if (account) return { ...token, graph: graphTokensFromAccount(account) };
+      if (!token.graph) return null;
+      try {
+        return { ...token, graph: await freshGraphTokens(token.graph) };
+      } catch (err) {
+        console.error(`[auth] Graph token refresh failed; ending session: ${describeError(err)}`);
+        return null;
+      }
+    },
+    // Only the user id reaches the browser; the Graph tokens stay in the cookie.
     session({ session, token }) {
       if (token.sub) session.user.id = token.sub;
       return session;

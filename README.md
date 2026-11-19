@@ -394,6 +394,13 @@ should list every permission above.
 Admin consent given to another app (for example Claude Desktop's "M365 MCP Server for
 Claude") doesn't apply here; each app registration needs its own.
 
+The app asks for these scopes at sign-in and keeps the user's Graph access and refresh
+tokens only in the encrypted Auth.js session cookie (nothing in the database). It refreshes
+the access token five minutes before it expires; if the refresh fails, the session ends and
+the user signs in again. The tokens make the cookie about 5–9 KB, which Auth.js splits into
+two or three cookies. Sessions from before the app stored Graph tokens end once, so everyone
+signs in again after this deploys.
+
 ### 6.8 Container Apps environment
 
 ```bash
