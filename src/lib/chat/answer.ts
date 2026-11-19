@@ -8,7 +8,7 @@ import type { ChatTurn } from "@/lib/validation";
 
 export type AnswerClient = Pick<Anthropic, "beta">;
 
-export const DEFAULT_CHAT_MODEL = "claude-opus-5-5";
+export const DEFAULT_CHAT_MODEL = "claude-haiku-5-5";
 
 /** Model turns per answer, tool calls included; a run that needs more is cut off. */
 const MAX_ITERATIONS = 8;

@@ -167,7 +167,7 @@ Use the Ingage components before writing custom markup.
   JSON `{ error, correlationId }`. The UI keeps the conversation in React state only (no
   `localStorage`) and sends at most `CHAT_HISTORY_MAX_TURNS` earlier turns.
 - **Chat answers (`src/lib/chat/`):** after the topic check, `streamAnswer` runs Claude
-  (`CHAT_MODEL`, default `claude-opus-5-5`; cached system prompt) through the SDK tool runner
+  (`CHAT_MODEL`, default `claude-haiku-5-5`; cached system prompt) through the SDK tool runner
   (`stream: true`, `max_iterations: 8`) with `chatTools()`. Each passage or item a tool
   returns is registered in a per-request `SourceRegistry` as `p1…`/`f1…`/`m1…`/`t1…`; Claude
   cites `[id]`, the markers are stripped from the stream, and registered ids become
