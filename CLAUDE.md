@@ -68,6 +68,7 @@ src/
 │   ├── chat-topics.ts                   # Topics (empty state + topic check) and examples
 │   ├── chat/topic-check.ts              # Haiku classifier: topic id or off-topic
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
+│   ├── graph-token.ts                   # Graph scopes, token refresh, getGraphAccessToken
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
 ├── knowledge/                           # Ingest pipeline (`pnpm ingest`)
@@ -141,6 +142,15 @@ Use the Ingage components before writing custom markup.
   bypass and `null` when signed out, and routes return 401 on `null`. Never take user
   identity from the request body.
 - **Auth bypass:** `E2E_AUTH_BYPASS=true` works only when `NODE_ENV !== "production"`.
+- **Graph token (`src/lib/graph-token.ts`):** sign-in requests `GRAPH_SCOPES` (delegated,
+  read-only, plus `offline_access`). The `jwt` callback keeps access token, refresh token and
+  expiry in the encrypted session cookie and refreshes 5 min before expiry; a failed refresh,
+  or a session without Graph tokens, returns null and ends the session. The `session`
+  callback never copies the tokens, so they don't reach the browser. Server code calls
+  `getGraphAccessToken()`, which reads the cookie with `getToken` and refreshes again if
+  needed (the proxy's refreshed cookie only lands on the response). It throws
+  `GraphTokenError` with `reason` `unavailable` (auth bypass), `signed-out`, or
+  `refresh-failed`. Never log or return the token.
 - **DB connection modes (`src/db/config.ts`):** `DATABASE_URL` (local/CI) or
   `PGHOST`/`PGDATABASE`/`PGUSER` (Azure). In Azure the password is a function, so `pg`
   fetches a fresh Entra token for every new connection. Nothing connects at import time.
