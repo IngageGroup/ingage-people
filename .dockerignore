@@ -5,6 +5,7 @@ node_modules
 !.env.local.example
 .worktrees
 docs
+!docs/knowledge
 e2e
 coverage
 *.log

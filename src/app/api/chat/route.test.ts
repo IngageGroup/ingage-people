@@ -84,6 +84,12 @@ afterEach(() => {
 });
 
 describe("POST /api/chat", () => {
+  it("searches the topic the topic check picked", async () => {
+    claudeSays(["You have an annual training budget [p1]."]);
+    await events(await POST(post({ question: "Budget?" })));
+    expect(passagesMock).toHaveBeenCalledWith("Budget?", ["handbook"]);
+  });
+
   it("returns 401 when signed out", async () => {
     emailMock.mockResolvedValue(null);
     const res = await POST(post({ question: "Budget?" }));
@@ -184,7 +190,7 @@ describe("POST /api/chat", () => {
 
     const all = await events(await POST(post({ question: "What is my secret budget?" })));
 
-    expect(passagesMock).toHaveBeenCalled();
+    expect(passagesMock).toHaveBeenCalledWith("What is my secret budget?", ["handbook"]);
     expect(all.at(-1)).toMatchObject({ type: "done", outcome: "answered" });
     const log = logged.mock.calls.flat().map(String).join(" ");
     expect(log).toMatch(/\[api\/chat [0-9a-f]{8}\] topic check failed/);

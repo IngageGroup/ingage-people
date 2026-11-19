@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("getPassageProvider", () => {
-  it("searches the handbook and re-ranks with Voyage, failing fast for a waiting user", async () => {
+  it("searches the given topics and re-ranks with Voyage, failing fast for a waiting user", async () => {
     vi.stubEnv("VOYAGE_API_KEY", "key");
     vi.stubEnv("VOYAGE_RERANK_MODEL", "rerank-test");
     retrieveMock.mockImplementation(async (question: string, options) => {
@@ -42,12 +42,12 @@ describe("getPassageProvider", () => {
     });
     rerankMock.mockResolvedValue([{ index: 0, score: 0.9 }]);
 
-    const passages = await getPassageProvider()("How do I request PTO?");
+    const passages = await getPassageProvider()("How do I request PTO?", ["handbook"]);
 
     expect(passages.map((p) => p.text)).toEqual(["Request PTO two weeks ahead."]);
     expect(retrieveMock).toHaveBeenCalledWith(
       "How do I request PTO?",
-      expect.objectContaining({ topic: "handbook" }),
+      expect.objectContaining({ topics: ["handbook"] }),
     );
     expect(embedQueryMock).toHaveBeenCalledWith("How do I request PTO?", {
       apiKey: "key",
@@ -64,7 +64,9 @@ describe("getPassageProvider", () => {
 
   it("fails clearly without a Voyage key", async () => {
     vi.stubEnv("VOYAGE_API_KEY", "");
-    await expect(getPassageProvider()("Q?")).rejects.toThrow("VOYAGE_API_KEY is not set");
+    await expect(getPassageProvider()("Q?", ["handbook"])).rejects.toThrow(
+      "VOYAGE_API_KEY is not set",
+    );
     expect(retrieveMock).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,18 @@
-import { getActiveVersion, type NewChunk, replaceSourceContent } from "@/db/knowledge";
+import {
+  getActiveVersion,
+  type NewChunk,
+  removeSourcesExcept,
+  replaceSourceContent,
+} from "@/db/knowledge";
 import { type Chunk, chunkDocument } from "@/knowledge/chunk";
-import { fetchSource } from "@/knowledge/fetch";
-import type { SourceConfig } from "@/knowledge/sources";
+import { type DocumentSource, fetchSource, listRepoMarkdown } from "@/knowledge/fetch";
+import type { RepoMarkdownSource, SourceConfig } from "@/knowledge/sources";
 
 export type IngestResult =
   | { status: "unchanged"; sourceId: string }
-  | { status: "stored"; sourceId: string; versionId: string; chunks: number };
+  | { status: "stored"; sourceId: string; versionId: string; chunks: number }
+  | { status: "removed"; sourceId: string }
+  | { status: "failed"; sourceId: string; error: unknown };
 
 export interface IngestOptions {
   /** Embeds chunk texts for storage, one vector per text, in order. */
@@ -30,7 +37,7 @@ function elapsed(since: number): string {
  * version in atomically. Throws on failure; the previous version then stays active.
  */
 export async function ingestSource(
-  source: SourceConfig,
+  source: DocumentSource,
   { embed, force = false, log = console.log }: IngestOptions,
 ): Promise<IngestResult> {
   const prefix = `[ingest ${source.id}]`;
@@ -70,4 +77,46 @@ export async function ingestSource(
       `total ${elapsed(start)})`,
   );
   return { status: "stored", sourceId: source.id, versionId, chunks: rows.length };
+}
+
+/**
+ * Brings a repo Markdown folder up to date: each file is ingested as its own source (unchanged
+ * ones are skipped), and sources whose file was deleted are removed. A file that fails keeps
+ * its previous version and is reported as failed; the others still go ahead.
+ */
+export async function ingestRepoMarkdown(
+  source: RepoMarkdownSource,
+  options: IngestOptions,
+): Promise<IngestResult[]> {
+  const files = await listRepoMarkdown(source);
+  const results: IngestResult[] = [];
+  for (const file of files) {
+    try {
+      results.push(await ingestSource(file, options));
+    } catch (error) {
+      results.push({ status: "failed", sourceId: file.id, error });
+    }
+  }
+  const removed = await removeSourcesExcept(
+    `${source.id}/`,
+    files.map((file) => file.id),
+  );
+  for (const sourceId of removed) {
+    (options.log ?? console.log)(`[ingest ${sourceId}] file deleted; source removed`);
+    results.push({ status: "removed", sourceId });
+  }
+  return results;
+}
+
+/** Ingests one configured source: a single document, or every file in a repo folder. */
+export async function ingestConfigured(
+  source: SourceConfig,
+  options: IngestOptions,
+): Promise<IngestResult[]> {
+  switch (source.kind) {
+    case "local-file":
+      return [await ingestSource(source, options)];
+    case "repo-markdown":
+      return ingestRepoMarkdown(source, options);
+  }
 }

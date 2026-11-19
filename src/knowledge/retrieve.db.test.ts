@@ -63,27 +63,34 @@ const texts = (candidates: { text: string }[]) => candidates.map((c) => c.text);
 
 describe("keywordSearch", () => {
   it("finds an exact term like 401k", async () => {
-    expect(texts(await keywordSearch("401k", { topic, limit: 30 }))).toEqual([RETIREMENT]);
+    expect(texts(await keywordSearch("401k", { topics: [topic], limit: 30 }))).toEqual([
+      RETIREMENT,
+    ]);
   });
 
   it("matches section headings as well as text", async () => {
-    expect(texts(await keywordSearch("paid time off", { topic, limit: 30 }))).toEqual([PTO]);
+    expect(texts(await keywordSearch("paid time off", { topics: [topic], limit: 30 }))).toEqual([
+      PTO,
+    ]);
   });
 
   it("returns nothing for a question with only stop words", async () => {
-    expect(await keywordSearch("what is the", { topic, limit: 30 })).toEqual([]);
+    expect(await keywordSearch("what is the", { topics: [topic], limit: 30 })).toEqual([]);
   });
 
   it("accepts search syntax without failing", async () => {
-    expect(texts(await keywordSearch('"training budget" -pto', { topic, limit: 30 }))).toEqual([
-      TRAINING,
-    ]);
+    expect(
+      texts(await keywordSearch('"training budget" -pto', { topics: [topic], limit: 30 })),
+    ).toEqual([TRAINING]);
   });
 });
 
 describe("retrieve", () => {
   it("finds a paraphrased question through vector search", async () => {
-    const candidates = await retrieve("How many vacation days can I take?", { topic, embedQuery });
+    const candidates = await retrieve("How many vacation days can I take?", {
+      topics: [topic],
+      embedQuery,
+    });
     expect(candidates[0]).toMatchObject({
       text: PTO,
       sectionPath: ["Time Off", "Paid Time Off"],
@@ -94,13 +101,13 @@ describe("retrieve", () => {
   });
 
   it("finds an exact term through keyword search even when vectors point elsewhere", async () => {
-    const candidates = await retrieve("What is the 401k match?", { topic, embedQuery });
+    const candidates = await retrieve("What is the 401k match?", { topics: [topic], embedQuery });
     expect(texts(candidates)).toContain(RETIREMENT);
   });
 
   it("ranks a chunk found by both searches first and lists it once", async () => {
     const candidates = await retrieve("Does the company help with retirement savings?", {
-      topic,
+      topics: [topic],
       embedQuery,
     });
     expect(candidates[0]?.text).toBe(RETIREMENT);
@@ -111,8 +118,16 @@ describe("retrieve", () => {
   });
 
   it("only returns chunks from the requested topic", async () => {
-    const candidates = await retrieve("What is the 401k match?", { topic, embedQuery });
+    const candidates = await retrieve("What is the 401k match?", { topics: [topic], embedQuery });
     expect(texts(candidates)).not.toContain(OTHER_TOPIC);
+  });
+
+  it("searches every requested topic", async () => {
+    const candidates = await retrieve("What is the 401k match?", {
+      topics: [topic, otherTopic],
+      embedQuery,
+    });
+    expect(texts(candidates)).toEqual(expect.arrayContaining([RETIREMENT, OTHER_TOPIC]));
   });
 
   it("only returns chunks from each source's active version", async () => {
@@ -128,7 +143,7 @@ describe("retrieve", () => {
       documentUpdatedAt: new Date("2026-10-02T00:00:00Z"),
       chunks: [chunk("Run the setup script.", ["Setup"], 2)],
     });
-    const candidates = await retrieve("setup", { topic: otherTopic, embedQuery });
+    const candidates = await retrieve("setup", { topics: [otherTopic], embedQuery });
     expect(texts(candidates)).toEqual(["Run the setup script."]);
   });
 });

@@ -85,6 +85,7 @@ src/
 ├── instrumentation.ts                   # register() → instrumentation-node (Node runtime only)
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
 └── proxy.ts                             # Auth gate (Next 16 replaces middleware.ts)
+docs/knowledge/                          # Markdown the chat answers from (repo-markdown sources)
 drizzle/                                 # Generated SQL migrations (committed)
 e2e/                                     # Playwright specs, db reset helper, warm-up
 ```
@@ -162,10 +163,10 @@ Use the Ingage components before writing custom markup.
   (`CHAT_TOPIC_MODEL`, no thinking, effort low, structured output) classifies the question,
   with the last two turns for follow-ups, into a `CHAT_TOPICS` id or `off-topic`. Off-topic
   (or a refusal) gets `OFF_TOPIC_ANSWER` with outcome `off-topic`; no search, no answer call.
-  If the check fails, the route logs it and searches anyway; the relevance threshold still
-  turns away unrelated questions. Adds about 1 s per question.
+  If the check fails, the route logs it and searches every topic (`searchTopics`); the
+  relevance threshold still turns away unrelated questions. Adds about 1 s per question.
 - **Passages (`src/lib/chat/passages.ts` → `src/knowledge/select.ts`):** retrieve over the
-  `handbook` topic, re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
+  topic the check picked (all `CHAT_TOPICS` if it failed), re-rank with Voyage (`VOYAGE_RERANK_MODEL`, default `rerank-3`), keep the
   top 5 scoring at least `SELECT_CONFIG.minScore` (0.55, set from the eval). None above it
   → don't-know without Claude. Voyage calls from the chat use 2 attempts and an 8 s timeout;
   a Voyage or DB failure is a 500 with a correlation id, never an ungrounded answer. Locally
@@ -179,6 +180,10 @@ Use the Ingage components before writing custom markup.
   `to_tsvector(regconfig, jsonb)` is immutable and `array_to_string` isn't.
 - **Ingest (`src/knowledge/`):** a source kind supplies a change marker cheaply and a lazy
   `load()`; unchanged sources are skipped unless `--force`. Chunks never span sections.
+  A `repo-markdown` source is a folder under `docs/knowledge/` (copied into the image): each
+  `.md` file is its own source `<id>/<path>` with a content hash, cited as
+  `/docs/<id>/<path>`; deleted files' sources are removed, and a missing or empty folder fails
+  instead of deleting everything. A topic goes into `CHAT_TOPICS` only once its docs exist.
   Embeddings use the text prefixed with `title > heading path`. Logs carry source id, version,
   chunk count, and timings, never document text. `pnpm ingest` runs through `tsx` with
   `--env-file-if-exists=.env.local`; the production image doesn't include it yet (#9).
@@ -191,7 +196,7 @@ Use the Ingage components before writing custom markup.
   the real handbook.
 - **Retrieval (`src/knowledge/retrieve.ts`):** keyword (`websearch_to_tsquery` +
   `ts_rank_cd`) and vector (cosine, Voyage `query` embedding) searches run in parallel over
-  the topic's active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword
+  the given topics' active chunks, ~30 each (`RETRIEVAL_CONFIG`), merged by RRF (k = 60). Keyword
   ranking lives only in `keywordSearch` so it can become BM25. `vectorSearch` sets
   `hnsw.iterative_scan = relaxed_order` so the topic filter can't starve the HNSW results.
 - **Rate limits (`src/db/rate-limit.ts`):** after auth and validation, `/api/chat` calls

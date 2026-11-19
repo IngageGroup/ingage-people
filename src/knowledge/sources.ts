@@ -9,7 +9,20 @@ export interface LocalFileSource {
   pathEnv: string;
 }
 
-export type SourceConfig = LocalFileSource;
+/**
+ * A folder of Markdown files in this repo (and the Docker image). Each file is ingested as its
+ * own source, `<id>/<path without .md>`, and cited with a link to `/docs/<id>/<path>`.
+ */
+export interface RepoMarkdownSource {
+  id: string;
+  topic: string;
+  kind: "repo-markdown";
+  audience: "everyone";
+  /** Folder relative to the working directory (the repo root, or /app in the image). */
+  dir: string;
+}
+
+export type SourceConfig = LocalFileSource | RepoMarkdownSource;
 
 /** Every source the ingest job keeps in the knowledge store. Changes go through PR review. */
 export const SOURCES: SourceConfig[] = [
