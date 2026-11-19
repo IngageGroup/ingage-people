@@ -75,7 +75,11 @@ function ndjson(topic: string, events: () => AsyncGenerator<ChatEvent>): Respons
     async start(controller) {
       try {
         for await (const event of events()) {
-          if (event.type === "citation") citedSections.push(event.citation.sectionPath);
+          // Only handbook sections are counted; a Microsoft 365 citation's path holds
+          // senders and folder names, which counts must never store.
+          if (event.type === "citation" && event.citation.id.startsWith("p")) {
+            citedSections.push(event.citation.sectionPath);
+          }
           if (event.type === "done") outcome = event.outcome;
           controller.enqueue(encoder.encode(encodeChatEvent(event)));
         }

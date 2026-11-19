@@ -19,6 +19,10 @@ vi.mock("@/db/rate-limit", () => ({
 }));
 vi.mock("@/db/chat-stats", () => ({ recordChatOutcome: recordMock }));
 vi.mock("@/lib/chat/passages", () => ({ getPassageProvider: () => passagesMock }));
+vi.mock("@/lib/graph-token", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getGraphAccessToken: async () => M365_FIXTURE_TOKEN,
+}));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     beta = { messages: { toolRunner: toolRunnerMock } };
@@ -27,6 +31,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 import { POST } from "@/app/api/chat/route";
+import { M365_FIXTURE_TOKEN, m365FixtureFetch } from "@/eval/m365-fixtures";
 import { offTopicAnswer } from "@/lib/chat/topic-check";
 
 const PASSAGE = {
@@ -93,6 +98,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   passagesMock.mockReset();
   parseMock.mockReset();
   quotaMock.mockReset();
@@ -274,6 +281,32 @@ describe("POST /api/chat", () => {
     it("records the topic, outcome, and cited sections of an answer", async () => {
       claudeSays(["You have an annual training budget [p1]."]);
       await events(await POST(post({ question: "Budget?" })));
+      expect(recordMock).toHaveBeenCalledWith({
+        topic: "handbook",
+        outcome: "answered",
+        citedSections: [["Training Budget"]],
+      });
+    });
+
+    it("counts handbook sections only, never Microsoft 365 senders or folders", async () => {
+      vi.stubEnv("M365_TOOLS", "enabled");
+      vi.stubGlobal("fetch", m365FixtureFetch);
+      toolRunnerMock.mockImplementation((params: { tools: Tool[] }) => ({
+        async *[Symbol.asyncIterator]() {
+          const run = (name: string) => params.tools.find((t) => t.name === name)?.run;
+          await run("search_handbook")?.({ query: "training budget" });
+          await run("search_mail")?.({ query: "training spend cap" });
+          yield {
+            async *[Symbol.asyncIterator]() {
+              const text = "Your budget is set [p1], and Sam capped Q1 at $4,000 [m1].";
+              yield { type: "content_block_delta", delta: { type: "text_delta", text } };
+            },
+            finalMessage: async () => ({ stop_reason: "end_turn" }),
+          };
+        },
+      }));
+      const all = await events(await POST(post({ question: "Budget?" })));
+      expect(all.filter((e) => e.type === "citation")).toHaveLength(2);
       expect(recordMock).toHaveBeenCalledWith({
         topic: "handbook",
         outcome: "answered",

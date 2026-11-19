@@ -110,6 +110,11 @@ function attribute(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/** Microsoft 365 text is untrusted: it must not be able to close its item or open a tag. */
+function escapeText(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 export function renderItems(items: RegisteredItem[]): string {
   return items
     .map((item) => {
@@ -121,7 +126,7 @@ export function renderItems(items: RegisteredItem[]): string {
         `location="${attribute(item.location.join(" › "))}"`,
         `date="${attribute(item.lastModified)}"`,
       ];
-      return `<item ${attributes.join(" ")}>\n${item.text}\n</item>`;
+      return `<item ${attributes.join(" ")}>\n${escapeText(item.text)}\n</item>`;
     })
     .join("\n");
 }
