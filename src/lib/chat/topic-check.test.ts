@@ -114,6 +114,9 @@ describe("checkTopic with Microsoft 365 tools on", () => {
     expect(await checkTopic({ question: "What did Acme say?", history: [], client })).toBe("work");
     const params = parse.mock.calls[0]?.[0] as { system: string };
     expect(params.system).toContain("- work: Your work:");
+    expect(params.system).toContain(
+      "Writing tasks (poems, jokes, drafts, rewrites) are off-topic even when they're about the user's own files, mail, or messages.",
+    );
   });
 
   it("leaves the work topic out of the prompt while the tools are off", async () => {
