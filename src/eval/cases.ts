@@ -10,6 +10,7 @@ export const CASE_CATEGORIES = [
   "not-covered",
   "off-topic",
   "injection",
+  "m365",
 ] as const;
 
 const caseSchema = z

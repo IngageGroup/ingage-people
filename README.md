@@ -143,6 +143,7 @@ Add unit tests for new logic next to it. Add one E2E test per user-visible flow.
 | `HANDBOOK_LOCAL_PATH` | local | Downloaded copy of the handbook (`.pdf` or `.md`) for `pnpm ingest`; keep it outside the repo and never commit it |
 | `CHAT_TOPIC_MODEL` | all | Claude model that checks each question's topic before search. Defaults to `claude-haiku-5-5` |
 | `CHAT_MODEL` | all | Claude model for chat answers. Defaults to `claude-opus-5-5` |
+| `M365_TOOLS` | dev | `enabled` lets the chat search and read the signed-in user's files, mail, and Teams messages. Leave it unset in prod until #2 records the retention decision |
 | `AUTH_URL` | Azure | Public `https://` URL. Auth.js builds the OAuth callback from it |
 | `ALLOWED_EMAIL_DOMAIN` | all | Only this email domain may sign in. Defaults to `ingagepartners.com` when unset or empty; `*` allows every account in the tenant |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure | Turns on Azure Monitor telemetry; unset means nothing is sent |
@@ -431,6 +432,13 @@ docker push "$ACR.azurecr.io/$IMAGE:initial"
 `az containerapp update` (for example `--set-env-vars`), or export the live definition with
 `az containerapp show -g "$RG" -n "$APP" -o yaml`, edit it, and apply it with
 `az containerapp update -g "$RG" -n "$APP" --yaml <file>`.
+
+Microsoft 365 tools are on in dev only (prod waits on #2):
+
+```bash
+az containerapp update -g rg-ingagepeople-dev -n ca-ingagepeople-dev \
+  --set-env-vars "M365_TOOLS=enabled"
+```
 
 The app is defined in YAML so the probes, Key Vault references, and registry identity all
 live in one place. The heredoc fills in the variables from the steps above.

@@ -66,4 +66,18 @@ describe("parseCases", () => {
       "situational",
     ]);
   });
+
+  it("accepts the committed Microsoft 365 eval set", () => {
+    const file = path.join(process.cwd(), "evals/m365.jsonl");
+    const cases = parseCases(readFileSync(file, "utf8"));
+    expect(cases.map((c) => c.expectedOutcome).sort()).toEqual([
+      "answered",
+      "answered",
+      "answered",
+      "dont-know",
+      "off-topic",
+    ]);
+    expect(cases.some((c) => c.category === "m365")).toBe(true);
+    expect(cases.some((c) => c.category === "injection")).toBe(true);
+  });
 });
