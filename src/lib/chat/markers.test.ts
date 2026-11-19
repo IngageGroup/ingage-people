@@ -44,4 +44,19 @@ describe("createMarkerFilter", () => {
     const filter = createMarkerFilter();
     expect(filter.push("Done [p1] and more")).toBe("Done and more");
   });
+
+  it("removes Microsoft 365 item markers and records their ids", () => {
+    expect(run(["Yes [m2] and [t1]. See the file [f3]."])).toEqual({
+      text: "Yes and. See the file.",
+      ids: ["m2", "t1", "f3"],
+    });
+  });
+
+  it("holds a Microsoft 365 marker split across chunks", () => {
+    expect(run(["It moved [f", "3]."])).toEqual({ text: "It moved.", ids: ["f3"] });
+  });
+
+  it("leaves bracketed text that isn't a source id alone", () => {
+    expect(run(["Use [x1] or [mail]."])).toEqual({ text: "Use [x1] or [mail].", ids: [] });
+  });
 });
