@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { type ChatOutcomeRecord, recordChatOutcome } from "@/db/chat-stats";
 import { CHAT_RATE_LIMITS, consumeChatQuota, type QuotaResult } from "@/db/rate-limit";
 import { getCurrentUserEmail } from "@/lib/auth";
-import { streamAnswer } from "@/lib/chat/answer";
+import { streamAnswer, todayIn } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider } from "@/lib/chat/passages";
 import { chatSkills } from "@/lib/chat/skills";
@@ -141,6 +141,9 @@ export async function POST(request: Request): Promise<Response> {
   const topic = await topicOf(parsed.data);
   if (topic === OFF_TOPIC) return ndjson(topic, offTopicReply);
 
+  const { question, history } = parsed.data;
+  const timeZone = parsed.data.timeZone ?? "UTC";
+  const skills = chatSkills();
   // A fresh registry per request: citations can only point at what this answer's tools found.
   const registry = new SourceRegistry();
   const tools = chatTools({
@@ -148,10 +151,20 @@ export async function POST(request: Request): Promise<Response> {
     passages: getPassageProvider(),
     handbookTopics: searchTopics(topic),
     graphToken: () => getGraphAccessToken(),
-    timeZone: "UTC",
-    skills: chatSkills(),
+    timeZone,
+    skills,
   });
   return ndjson(topic, () =>
-    streamAnswer({ ...parsed.data, tools, registry, client: chatClient() }),
+    streamAnswer({
+      question,
+      history,
+      today: todayIn(timeZone, new Date()),
+      timeZone,
+      timeZoneFromBrowser: parsed.data.timeZone !== undefined,
+      skills,
+      tools,
+      registry,
+      client: chatClient(),
+    }),
   );
 }

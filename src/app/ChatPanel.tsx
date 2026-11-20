@@ -220,7 +220,11 @@ export default function ChatPanel({ scope }: { scope: ChatScope }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, history }),
+        body: JSON.stringify({
+          question,
+          history,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw await errorFromResponse(res);

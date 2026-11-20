@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_HISTORY_MAX_TURNS, CHAT_QUESTION_MAX, chatRequestSchema } from "@/lib/validation";
+import {
+  CHAT_HISTORY_MAX_TURNS,
+  CHAT_QUESTION_MAX,
+  CHAT_TURN_TEXT_MAX,
+  chatRequestSchema,
+} from "@/lib/validation";
 
 describe("chatRequestSchema", () => {
   function chatError(input: unknown): string | undefined {
@@ -12,6 +17,25 @@ describe("chatRequestSchema", () => {
       question: "How much PTO do I get?",
       history: [],
     });
+  });
+
+  it("accepts IANA time zones and UTC", () => {
+    expect(chatRequestSchema.parse({ question: "Q", timeZone: "America/New_York" }).timeZone).toBe(
+      "America/New_York",
+    );
+    expect(chatRequestSchema.parse({ question: "Q", timeZone: "UTC" }).timeZone).toBe("UTC");
+  });
+
+  it("rejects an unknown time zone", () => {
+    expect(chatError({ question: "Q", timeZone: "Mars/Base" })).toBe("Unknown time zone");
+  });
+
+  it("leaves time zone unset when the browser sends none", () => {
+    expect(chatRequestSchema.parse({ question: "Q" }).timeZone).toBeUndefined();
+  });
+
+  it("allows earlier answers long enough to hold a month of hours", () => {
+    expect(CHAT_TURN_TEXT_MAX).toBe(8000);
   });
 
   it("requires a non-blank question", () => {
