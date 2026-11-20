@@ -131,7 +131,7 @@ function attribute(value: string): string {
 }
 
 /** Microsoft 365 text is untrusted: it must not be able to close its item or open a tag. */
-function escapeText(text: string): string {
+export function escapeText(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 

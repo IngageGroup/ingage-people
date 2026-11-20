@@ -18,6 +18,7 @@ import type { RerankResult } from "@/knowledge/voyage";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { chatSearch } from "@/lib/chat/passages";
+import { chatSkills } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
 import { type ChatToolDeps, chatTools } from "@/lib/chat/tools";
 import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
@@ -69,6 +70,8 @@ async function runCase(evalCase: EvalCase, m365: boolean): Promise<CaseResult> {
       passages: async () => passages,
       handbookTopics: searchTopics(topic),
       ...graphAccess(m365),
+      timeZone: "UTC",
+      skills: chatSkills(),
     });
     for await (const event of streamAnswer({ ...request, tools, registry, client })) {
       if (event.type === "delta") answer += event.text;

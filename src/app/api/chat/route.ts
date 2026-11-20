@@ -5,6 +5,7 @@ import { getCurrentUserEmail } from "@/lib/auth";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider } from "@/lib/chat/passages";
+import { chatSkills } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
 import { chatTools } from "@/lib/chat/tools";
 import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
@@ -147,6 +148,8 @@ export async function POST(request: Request): Promise<Response> {
     passages: getPassageProvider(),
     handbookTopics: searchTopics(topic),
     graphToken: () => getGraphAccessToken(),
+    timeZone: "UTC",
+    skills: chatSkills(),
   });
   return ndjson(topic, () =>
     streamAnswer({ ...parsed.data, tools, registry, client: chatClient() }),

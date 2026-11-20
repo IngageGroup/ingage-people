@@ -58,6 +58,8 @@ function setup(steps: Step[]) {
     passages: async () => [PASSAGE],
     handbookTopics: ["handbook"],
     graphToken: async () => "tok",
+    timeZone: "UTC",
+    skills: [],
   });
   return { registry, tools, ...fakeRunner(steps) };
 }
@@ -214,7 +216,7 @@ describe("streamAnswer", () => {
     const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
     await collect(streamAnswer({ question: "Q?", history: [], tools, registry, client }));
     const params = toolRunner.mock.calls[0]?.[0] as unknown as { tools: Tool[] };
-    expect(params.tools).toHaveLength(7);
+    expect(params.tools).toHaveLength(9);
   });
 
   it("reads the model from CHAT_MODEL", async () => {
