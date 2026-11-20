@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { M365_FIXTURE_TOKEN, m365FixtureFetch } from "@/eval/m365-fixtures";
 import { listCalendarEvents } from "@/lib/graph/calendar";
 import { readMail, searchMail } from "@/lib/graph/mail";
+import { mailboxTimeZone } from "@/lib/graph/mailbox";
 import { readTeamsThread, searchTeams } from "@/lib/graph/teams";
 
 describe("m365FixtureFetch", () => {
@@ -18,6 +19,10 @@ describe("m365FixtureFetch", () => {
       "2026-11-13 Food bank volunteering 3",
     ]);
     expect(listing.skipped).toEqual({ cancelled: 1, declined: 1, allDay: 1, free: 0 });
+  });
+
+  it("has an Outlook time zone setting", async () => {
+    expect(await mailboxTimeZone(M365_FIXTURE_TOKEN, m365FixtureFetch)).toBe("America/New_York");
   });
 
   it("has no events in other weeks", async () => {

@@ -120,12 +120,18 @@ describe("POST /api/chat", () => {
     expect(lastUserMessage()).toMatch(/^<today>\d{4}-\d{2}-\d{2} \([A-Z][a-z]+day\)<\/today>/);
   });
 
+  it("uses the Outlook time zone over the browser's when Microsoft 365 is on", async () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    vi.stubGlobal("fetch", m365FixtureFetch);
+    claudeSays(["Hi [p1]."]);
+    await events(await POST(post({ question: "Q?", timeZone: "America/Chicago" })));
+    expect(lastUserMessage()).toContain("<time_zone>America/New_York</time_zone>");
+  });
+
   it("falls back to UTC, and says so, when the browser sends no time zone", async () => {
     claudeSays(["Hi [p1]."]);
     await events(await POST(post({ question: "Q?" })));
-    expect(lastUserMessage()).toContain(
-      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
-    );
+    expect(lastUserMessage()).toContain("<time_zone>UTC (no time zone found)</time_zone>");
   });
 
   it("answers in UTC, and says so, when the time zone is unknown", async () => {
@@ -133,9 +139,7 @@ describe("POST /api/chat", () => {
     const res = await POST(post({ question: "Q?", timeZone: "Mars/Base" }));
     expect(res.status).toBe(200);
     await events(res);
-    expect(lastUserMessage()).toContain(
-      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
-    );
+    expect(lastUserMessage()).toContain("<time_zone>UTC (no time zone found)</time_zone>");
   });
 
   it("searches the topic the topic check picked", async () => {
