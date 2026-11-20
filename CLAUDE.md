@@ -208,7 +208,10 @@ Use the Ingage components before writing custom markup.
   cancelled, declined, all-day, and free events, and registers the rest as `c1…` (not
   citations). Claude picks a pillar per event from its title against the handbook's
   definitions (`not-sure` when unclear); `tally_hours` sums hours in code, one line per day
-  per category rounded to 0.25, and Claude repeats the lines unchanged. Corrections re-list
+  per category rounded to 0.25, and Claude repeats the lines unchanged. Events over 12 h are
+  never counted ("Not sure", enter by hand); "Not sure" is one line per title, no hours. The
+  browser's zone is dropped (UTC fallback with a note), never a 400, when `Intl` can't use it.
+  `instrumentation-node.ts` loads the skills at startup and exits 1 on a broken skill file. Corrections re-list
   the period and reuse the earlier answer's categories. Never log event titles.
 - **Graph (`src/lib/graph/`):** `graphRequest` retries 429/5xx up to 3 times, honours
   `Retry-After` up to 5 s, and throws `GraphError` with method, path (no query), status,

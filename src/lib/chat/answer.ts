@@ -45,7 +45,7 @@ function skillsSection(skills: Skill[]): string {
 
 Skills:
 ${list}
-- When a question matches a skill, call load_skill first and follow its instructions. The rules above still apply.`;
+- When a question matches a skill, or follows up on an earlier answer that used a skill (for example, correcting its categories), call load_skill first and follow its instructions. The rules above still apply.`;
 }
 
 /**

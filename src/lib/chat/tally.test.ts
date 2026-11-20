@@ -99,11 +99,45 @@ describe("tallyHours", () => {
     ).toThrow(new TallyError("Assigned more than once: c2"));
   });
 
+  it("shows no hours for a not-sure event, so a short one never reads 0 h", () => {
+    const brief = event("c6", "Quick sync", "2026-11-04", "10:00", "10:05", 5 / 60);
+    expect(renderTally(tallyHours([brief], []))).toContain(
+      "Not sure: Quick sync (2026-11-04 10:00-10:05)",
+    );
+  });
+
   it("lists a line that rounds to zero instead of showing 0 h", () => {
     const brief = event("c6", "Quick sync", "2026-11-04", "10:00", "10:05", 5 / 60);
     const tally = tallyHours([brief], [{ event: "c6", category: "ingage-growth" }]);
     expect(tally.lines).toEqual([]);
     expect(tally.underQuarterHour.map((e) => e.id)).toEqual(["c6"]);
+  });
+
+  it("never counts an event over 12 hours, which may span several days", () => {
+    const conference = event("c8", "Tech conference", "2026-11-03", "09:00", "17:00", 56);
+    const tally = tallyHours([conference], [{ event: "c8", category: "personal-growth" }]);
+    expect(tally.lines).toEqual([]);
+    expect(tally.notSure.map((e) => e.id)).toEqual(["c8"]);
+    expect(renderTally(tally)).toContain(
+      "Not sure: Tech conference (2026-11-03 09:00-17:00, over 12 hours: enter by hand)",
+    );
+  });
+
+  it("keeps a month of client meetings short enough to survive in history", () => {
+    const titles = ["Acme standup", "Acme sprint review", "Globex sync", "Initech 1:1", "Acme QA"];
+    const meetings = Array.from({ length: 150 }, (_, i) =>
+      event(
+        `c${i + 1}`,
+        titles[i % 5] ?? "",
+        `2026-11-${String((i % 28) + 1).padStart(2, "0")}`,
+        "09:00",
+        "09:30",
+        0.5,
+      ),
+    );
+    const text = renderTally(tallyHours(meetings, []));
+    expect(text.length).toBeLessThan(6000);
+    expect(text.match(/^Not sure:/gm)).toHaveLength(5);
   });
 
   it("notes events that overlap on the same date", () => {
@@ -135,7 +169,7 @@ describe("renderTally", () => {
       [
         "2026-11-03 (Tue) | Personal Growth | 2.25 h | AWS study group; Tech talk",
         "Totals: Personal Growth 2.25 h, Ingage Growth 0 h, Community Impact 0 h",
-        "Not sure: Team offsite planning (2026-11-05, 09:00-12:00, 3 h)",
+        "Not sure: Team offsite planning (2026-11-05 09:00-12:00)",
       ].join("\n"),
     );
   });

@@ -128,10 +128,14 @@ describe("POST /api/chat", () => {
     );
   });
 
-  it("rejects an unknown time zone with 400", async () => {
+  it("answers in UTC, and says so, when the time zone is unknown", async () => {
+    claudeSays(["Hi [p1]."]);
     const res = await POST(post({ question: "Q?", timeZone: "Mars/Base" }));
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: "Unknown time zone" });
+    expect(res.status).toBe(200);
+    await events(res);
+    expect(lastUserMessage()).toContain(
+      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
+    );
   });
 
   it("searches the topic the topic check picked", async () => {

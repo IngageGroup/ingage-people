@@ -305,6 +305,7 @@ describe("systemPrompt", () => {
       "- organize-growth-hours: Organize the user's calendar time into growth hours.",
     );
     expect(prompt).toContain("call load_skill first");
+    expect(prompt).toContain("follows up on an earlier answer that used a skill");
   });
 
   it("is the same text for the same skills, so it stays cached", () => {

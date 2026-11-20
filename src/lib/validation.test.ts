@@ -26,8 +26,16 @@ describe("chatRequestSchema", () => {
     expect(chatRequestSchema.parse({ question: "Q", timeZone: "UTC" }).timeZone).toBe("UTC");
   });
 
-  it("rejects an unknown time zone", () => {
-    expect(chatError({ question: "Q", timeZone: "Mars/Base" })).toBe("Unknown time zone");
+  it("accepts current IANA names that Intl's list leaves out", () => {
+    for (const zone of ["America/Indiana/Indianapolis", "Etc/UTC", "Asia/Kolkata", "Europe/Kyiv"]) {
+      expect(chatRequestSchema.parse({ question: "Q", timeZone: zone }).timeZone).toBe(zone);
+    }
+  });
+
+  it("drops an unknown time zone instead of rejecting the question", () => {
+    expect(chatRequestSchema.parse({ question: "Q", timeZone: "Mars/Base" }).timeZone).toBe(
+      undefined,
+    );
   });
 
   it("leaves time zone unset when the browser sends none", () => {

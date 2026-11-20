@@ -152,7 +152,11 @@ export async function listCalendarEvents(
     for (const event of page.value ?? []) {
       const reason = skipReason(event);
       if (reason) listing.skipped[reason] += 1;
-      else listing.events.push(toEvent(event));
+      else {
+        const kept = toEvent(event);
+        // calendarView also returns events that started earlier and run into the period.
+        if (kept.date >= range.start) listing.events.push(kept);
+      }
     }
     if (listing.events.length > CALENDAR_MAX_EVENTS) {
       throw new CalendarRangeError(

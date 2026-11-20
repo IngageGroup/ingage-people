@@ -32,6 +32,9 @@ export interface Tally {
   overlaps: Array<{ date: string; titles: [string, string] }>;
 }
 
+/** Longer than this, an event may span several days; its hours are never counted. */
+const LONG_EVENT_HOURS = 12;
+
 function quarterHours(hours: number): number {
   return Math.round(hours * 4) / 4;
 }
@@ -84,7 +87,8 @@ export function tallyHours(events: RegisteredEvent[], assignments: Assignment[])
   >();
   const notSure: RegisteredEvent[] = [];
   for (const event of [...events].sort(byTime)) {
-    const category = categoryOf.get(event.id) ?? "not-sure";
+    const category =
+      event.hours > LONG_EVENT_HOURS ? "not-sure" : (categoryOf.get(event.id) ?? "not-sure");
     if (category === "not-sure") {
       notSure.push(event);
       continue;
@@ -126,6 +130,22 @@ function weekday(date: string): string {
   return WEEKDAY.format(new Date(`${date}T00:00:00Z`));
 }
 
+function occurrence(e: RegisteredEvent): string {
+  const when = `${e.date} ${e.start}-${e.end}`;
+  return e.hours > LONG_EVENT_HOURS
+    ? `${when}, over ${LONG_EVENT_HOURS} hours: enter by hand`
+    : when;
+}
+
+/** One line per title, so a month of repeated client meetings stays short in history. */
+function notSureLines(events: RegisteredEvent[]): string[] {
+  const byTitle = new Map<string, RegisteredEvent[]>();
+  for (const e of events) byTitle.set(e.title, [...(byTitle.get(e.title) ?? []), e]);
+  return [...byTitle].map(
+    ([title, list]) => `Not sure: ${title} (${list.map(occurrence).join("; ")})`,
+  );
+}
+
 /** The tally as plain lines the chat shows as is: one per QuickBooks entry, then the rest. */
 export function renderTally(tally: Tally): string {
   const out = tally.lines.map(
@@ -134,9 +154,7 @@ export function renderTally(tally: Tally): string {
   );
   const totals = GROWTH_CATEGORIES.map((c) => `${LABEL[c]} ${tally.totals[c]} h`).join(", ");
   out.push(`Totals: ${totals}`);
-  for (const e of tally.notSure) {
-    out.push(`Not sure: ${e.title} (${e.date}, ${e.start}-${e.end}, ${quarterHours(e.hours)} h)`);
-  }
+  out.push(...notSureLines(tally.notSure));
   for (const e of tally.underQuarterHour) {
     out.push(`Under a quarter hour, not counted: ${e.title} (${e.date})`);
   }

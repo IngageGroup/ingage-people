@@ -13,9 +13,14 @@ const chatTurnSchema = z.object({
     .max(CHAT_TURN_TEXT_MAX, `Each earlier turn must be ${CHAT_TURN_TEXT_MAX} characters or fewer`),
 });
 
-/** `Intl.supportedValuesOf` doesn't always list "UTC", which browsers can report. */
+/** Any zone `Intl` can format in, including current IANA names its own list leaves out. */
 function isTimeZone(zone: string): boolean {
-  return zone === "UTC" || Intl.supportedValuesOf("timeZone").includes(zone);
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const chatRequestSchema = z.object({
@@ -28,12 +33,15 @@ export const chatRequestSchema = z.object({
     .array(chatTurnSchema)
     .max(CHAT_HISTORY_MAX_TURNS, `Send at most ${CHAT_HISTORY_MAX_TURNS} earlier turns`)
     .default([]),
-  /** The browser's IANA time zone, for calendar times and today's date. Not identity. */
+  /**
+   * The browser's IANA time zone, for calendar times and today's date. Not identity. One the
+   * server can't use is dropped (the answer falls back to UTC) rather than failing the question.
+   */
   timeZone: z
-    .string({ error: "Time zone must be text" })
-    .max(64, "Unknown time zone")
-    .refine(isTimeZone, "Unknown time zone")
-    .optional(),
+    .string()
+    .optional()
+    .catch(undefined)
+    .transform((zone) => (zone && zone.length <= 64 && isTimeZone(zone) ? zone : undefined)),
 });
 
 export type ChatTurn = z.infer<typeof chatTurnSchema>;

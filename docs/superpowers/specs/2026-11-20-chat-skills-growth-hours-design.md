@@ -97,9 +97,9 @@ The user picked **A**.
   (`<today>2026-11-20 (Thursday)</today>` before the question), not the system prompt, so the
   cache holds. This is added for every question, not only skill ones.
 - Calendar times are shown in the user's time zone. The browser sends its IANA zone
-  (`Intl.DateTimeFormat().resolvedOptions().timeZone`) in the `/api/chat` body; Zod accepts it
-  only if `Intl.supportedValuesOf("timeZone")` lists it, and the route falls back to UTC
-  (and says so in the answer) when it's missing. It isn't identity, so taking it from the body
+  (`Intl.DateTimeFormat().resolvedOptions().timeZone`) in the `/api/chat` body. A zone `Intl`
+  can't format in is dropped, never a 400, and the route falls back to UTC (and says so in the
+  answer) when it's missing or dropped. It isn't identity, so taking it from the body
   is fine. Graph is asked for times in that zone (`Prefer: outlook.timezone="<zone>"`).
 
 ### `list_calendar_events({ start, end })`
@@ -120,7 +120,11 @@ The user picked **A**.
   `https://outlook.office.com/calendar/`), text = date, start-end, hours, organizer,
   Outlook categories. Hours are the event's duration in hours, kept unrounded in the
   registry.
-- An event that runs past midnight counts on its start day.
+- An event that runs past midnight counts on its start day. Events that started before the
+  period are left out. An event over 12 hours (a multi-day conference or offsite entered as one
+  event) is never counted: it goes to "Not sure" with a note to enter it by hand.
+- "Not sure" events are grouped one line per title, without hours, so a month of client
+  meetings stays short enough to survive in the chat history for corrections.
 
 ### `tally_hours({ assignments })`
 

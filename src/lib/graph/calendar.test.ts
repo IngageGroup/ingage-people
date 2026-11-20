@@ -94,6 +94,19 @@ describe("listCalendarEvents", () => {
     expect(events[0]).toMatchObject({ date: "2026-11-03", start: "23:30", end: "00:30", hours: 1 });
   });
 
+  it("leaves out events that start before the period", async () => {
+    const early = graphEvent("early", {
+      start: { dateTime: "2026-11-02T23:00:00.0000000" },
+      end: { dateTime: "2026-11-03T01:00:00.0000000" },
+    });
+    const { events } = await listCalendarEvents(
+      RANGE,
+      "tok",
+      fetchPages({ value: [early, graphEvent("e1")] }),
+    );
+    expect(events.map((e) => e.graphId)).toEqual(["e1"]);
+  });
+
   it("skips and counts cancelled, declined, all-day, and free events", async () => {
     const fetchFn = fetchPages({
       value: [
