@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db/migrate", () => ({ runMigrations: vi.fn() }));
 vi.mock("@azure/monitor-opentelemetry", () => ({ useAzureMonitor: vi.fn() }));
+vi.mock("@/lib/chat/skills", () => ({ chatSkills: vi.fn(() => []) }));
 
 import { useAzureMonitor } from "@azure/monitor-opentelemetry";
 import { runMigrations } from "@/db/migrate";
 import { startNodeServer } from "@/instrumentation-node";
+import { chatSkills } from "@/lib/chat/skills";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -37,6 +39,26 @@ describe("startNodeServer", () => {
     vi.mocked(runMigrations).mockRejectedValue(new Error("auth failed"));
     await startNodeServer();
     expect(console.error).toHaveBeenCalledWith("[migrate] failed; exiting", expect.any(Error));
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("loads the chat skills at startup", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    await startNodeServer();
+    expect(chatSkills).toHaveBeenCalledOnce();
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it("exits non-zero with a clear log line when a skill file is broken", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.mocked(chatSkills).mockImplementation(() => {
+      throw new Error("bad.md: name is required");
+    });
+    await startNodeServer();
+    expect(console.error).toHaveBeenCalledWith(
+      "[skills] failed to load; exiting",
+      expect.any(Error),
+    );
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 

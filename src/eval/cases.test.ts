@@ -15,9 +15,25 @@ const answered = {
 const jsonl = (...rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n");
 
 describe("parseCases", () => {
+  it("keeps earlier turns for follow-up cases", () => {
+    const history = [
+      { role: "user", content: "Organize my growth hours for last week." },
+      {
+        role: "assistant",
+        content: "2026-11-10 (Tue) | Personal Growth | 1.5 h | AWS study group",
+      },
+    ];
+    const [c] = parseCases(jsonl({ ...answered, history }));
+    expect(c?.history).toEqual(history);
+  });
+
+  it("defaults history to empty", () => {
+    expect(parseCases(jsonl(answered))[0]?.history).toEqual([]);
+  });
+
   it("reads one case per line and skips blank lines", () => {
     const cases = parseCases(`${jsonl(answered)}\n\n`);
-    expect(cases).toEqual([answered]);
+    expect(cases).toEqual([{ ...answered, history: [] }]);
   });
 
   it("defaults sections and facts for cases that shouldn't be answered", () => {
@@ -74,8 +90,14 @@ describe("parseCases", () => {
       "answered",
       "answered",
       "answered",
+      "answered",
+      "answered",
+      "answered",
       "dont-know",
       "off-topic",
+    ]);
+    expect(cases.filter((c) => c.history.length).map((c) => c.id)).toEqual([
+      "m365-growth-hours-correction",
     ]);
     expect(cases.some((c) => c.category === "m365")).toBe(true);
     expect(cases.some((c) => c.category === "injection")).toBe(true);

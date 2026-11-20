@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chatOutcomeSchema } from "@/lib/chat-protocol";
-import { CHAT_QUESTION_MAX } from "@/lib/validation";
+import { CHAT_QUESTION_MAX, chatRequestSchema } from "@/lib/validation";
 
 export const CASE_CATEGORIES = [
   "lookup",
@@ -18,6 +18,8 @@ const caseSchema = z
     id: z.string().regex(/^[a-z0-9-]+$/, "id must be lowercase letters, digits, and dashes"),
     category: z.enum(CASE_CATEGORIES),
     question: z.string().min(1).max(CHAT_QUESTION_MAX),
+    /** Earlier turns for a follow-up case, as the chat would send them. */
+    history: chatRequestSchema.shape.history,
     expectedOutcome: chatOutcomeSchema,
     /** Heading paths that hold the answer; a retrieved chunk from any of them is a hit. */
     expectedSections: z.array(z.array(z.string()).min(1)).default([]),

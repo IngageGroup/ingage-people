@@ -10,6 +10,7 @@ function evalCase(overrides: Partial<EvalCase>): EvalCase {
     id: "c",
     category: "lookup",
     question: "Q?",
+    history: [],
     expectedOutcome: "answered",
     expectedSections: [PTO],
     expectedFacts: ["fact"],

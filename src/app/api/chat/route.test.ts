@@ -54,10 +54,9 @@ function claudeSays(chunks: string[], failAfter?: Error) {
     (params: { tools: Tool[]; messages: Array<{ content: string }> }) => ({
       async *[Symbol.asyncIterator]() {
         const search = params.tools.find((t) => t.name === "search_handbook");
-        const question = params.messages
-          .at(-1)
-          ?.content.replace(/<\/?question>/g, "")
-          .trim();
+        const question = /<question>\n([\s\S]*)\n<\/question>/.exec(
+          params.messages.at(-1)?.content ?? "",
+        )?.[1];
         await Promise.resolve(search?.run({ query: question ?? "" })).catch(() => undefined);
         yield {
           async *[Symbol.asyncIterator]() {
@@ -109,6 +108,36 @@ afterEach(() => {
 });
 
 describe("POST /api/chat", () => {
+  function lastUserMessage(): string {
+    const params = toolRunnerMock.mock.calls[0]?.[0] as { messages: Array<{ content: string }> };
+    return params.messages.at(-1)?.content ?? "";
+  }
+
+  it("asks with the browser's time zone and today's date in it", async () => {
+    claudeSays(["Hi [p1]."]);
+    await events(await POST(post({ question: "Q?", timeZone: "America/New_York" })));
+    expect(lastUserMessage()).toContain("<time_zone>America/New_York</time_zone>");
+    expect(lastUserMessage()).toMatch(/^<today>\d{4}-\d{2}-\d{2} \([A-Z][a-z]+day\)<\/today>/);
+  });
+
+  it("falls back to UTC, and says so, when the browser sends no time zone", async () => {
+    claudeSays(["Hi [p1]."]);
+    await events(await POST(post({ question: "Q?" })));
+    expect(lastUserMessage()).toContain(
+      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
+    );
+  });
+
+  it("answers in UTC, and says so, when the time zone is unknown", async () => {
+    claudeSays(["Hi [p1]."]);
+    const res = await POST(post({ question: "Q?", timeZone: "Mars/Base" }));
+    expect(res.status).toBe(200);
+    await events(res);
+    expect(lastUserMessage()).toContain(
+      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
+    );
+  });
+
   it("searches the topic the topic check picked", async () => {
     claudeSays(["You have an annual training budget [p1]."]);
     await events(await POST(post({ question: "Budget?" })));

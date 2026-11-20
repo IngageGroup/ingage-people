@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type AnswerClient, streamAnswer } from "@/lib/chat/answer";
+import { type AnswerClient, streamAnswer, systemPrompt, todayIn } from "@/lib/chat/answer";
 import type { Passage } from "@/lib/chat/passages";
+import type { Skill } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
 import { chatTools } from "@/lib/chat/tools";
 import { type ChatEvent, chatEventSchema } from "@/lib/chat-protocol";
@@ -12,6 +13,21 @@ const PASSAGE: Passage = {
   documentTitle: "Sample Handbook",
   url: "https://example.test/handbook.pdf",
   lastUpdated: "2026-11-01",
+};
+
+/** Date and zone every test question is asked with. */
+const CONTEXT = {
+  today: "2026-11-20 (Friday)",
+  timeZone: "America/New_York",
+  timeZoneFromBrowser: true,
+  skills: [] as Skill[],
+};
+
+const SKILL: Skill = {
+  name: "organize-growth-hours",
+  description: "Organize the user's calendar time into growth hours.",
+  requires: ["m365"],
+  body: "Steps.",
 };
 
 /** One model turn: text it streams, tools it calls afterwards, and how it stopped. */
@@ -58,6 +74,8 @@ function setup(steps: Step[]) {
     passages: async () => [PASSAGE],
     handbookTopics: ["handbook"],
     graphToken: async () => "tok",
+    timeZone: "UTC",
+    skills: [],
   });
   return { registry, tools, ...fakeRunner(steps) };
 }
@@ -87,7 +105,7 @@ describe("streamAnswer", () => {
       { chunks: ["You have an annual ", "training budget [p", "1]."] },
     ]);
     const events = await collect(
-      streamAnswer({ question: "Budget?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Budget?", history: [], tools, registry, client }),
     );
 
     expect(text(events)).toBe("You have an annual training budget.");
@@ -116,7 +134,7 @@ describe("streamAnswer", () => {
       { chunks: ["You have a training budget [p1]."] },
     ]);
     const events = await collect(
-      streamAnswer({ question: "Budget?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Budget?", history: [], tools, registry, client }),
     );
     expect(text(events)).toBe("I'll check the handbook.\n\nYou have a training budget.");
   });
@@ -127,7 +145,7 @@ describe("streamAnswer", () => {
       { chunks: ["The handbook doesn't cover that."] },
     ]);
     const events = await collect(
-      streamAnswer({ question: "Pets?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Pets?", history: [], tools, registry, client }),
     );
     expect(events.at(-1)).toEqual({ type: "done", outcome: "dont-know", sources: [] });
   });
@@ -135,7 +153,7 @@ describe("streamAnswer", () => {
   it("ignores cited ids that no tool returned in this answer", async () => {
     const { client, tools, registry } = setup([{ chunks: ["Yes [m9] and [p1]."] }]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
     );
     expect(events.some((e) => e.type === "citation")).toBe(false);
     expect(events.at(-1)).toMatchObject({ outcome: "dont-know" });
@@ -146,7 +164,7 @@ describe("streamAnswer", () => {
       { chunks: ["Let me look [p1]"], calls: [SEARCH], stopReason: "tool_use" },
     ]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
     );
     expect(events.at(-1)).toEqual({ type: "error", error: "The answer was cut off. Try again." });
     expect(events.some((e) => e.type === "done")).toBe(false);
@@ -155,7 +173,7 @@ describe("streamAnswer", () => {
   it("ends with the cut-off error when the answer hits the length limit", async () => {
     const { client, tools, registry } = setup([{ chunks: ["Long"], stopReason: "max_tokens" }]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
     );
     expect(events.at(-1)).toEqual({ type: "error", error: "The answer was cut off. Try again." });
   });
@@ -163,7 +181,7 @@ describe("streamAnswer", () => {
   it("ends with an error naming HR when Claude declines", async () => {
     const { client, tools, registry } = setup([{ stopReason: "refusal" }]);
     const events = await collect(
-      streamAnswer({ question: "Q?", history: [], tools, registry, client }),
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
     );
     expect(events.at(-1)).toEqual({
       type: "error",
@@ -176,6 +194,7 @@ describe("streamAnswer", () => {
     const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
     await collect(
       streamAnswer({
+        ...CONTEXT,
         question: "And part-time?",
         history: [
           { role: "user", content: "PTO?" },
@@ -190,7 +209,7 @@ describe("streamAnswer", () => {
     expect(params).toMatchObject({
       model: "claude-haiku-5-5",
       stream: true,
-      max_iterations: 8,
+      max_iterations: 10,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium" },
@@ -205,24 +224,100 @@ describe("streamAnswer", () => {
     expect(params["messages"]).toEqual([
       { role: "user", content: "PTO?" },
       { role: "assistant", content: "15 days." },
-      { role: "user", content: "<question>\nAnd part-time?\n</question>" },
+      {
+        role: "user",
+        content:
+          "<today>2026-11-20 (Friday)</today>\n<time_zone>America/New_York</time_zone>\n<question>\nAnd part-time?\n</question>",
+      },
     ]);
   });
 
   it("offers Claude every tool when Microsoft 365 is on", async () => {
     vi.stubEnv("M365_TOOLS", "enabled");
     const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
-    await collect(streamAnswer({ question: "Q?", history: [], tools, registry, client }));
+    await collect(
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
+    );
     const params = toolRunner.mock.calls[0]?.[0] as unknown as { tools: Tool[] };
-    expect(params.tools).toHaveLength(7);
+    expect(params.tools).toHaveLength(9);
   });
 
   it("reads the model from CHAT_MODEL", async () => {
     vi.stubEnv("CHAT_MODEL", "claude-test");
     const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
-    await collect(streamAnswer({ question: "Q?", history: [], tools, registry, client }));
+    await collect(
+      streamAnswer({ ...CONTEXT, question: "Q?", history: [], tools, registry, client }),
+    );
     expect((toolRunner.mock.calls[0]?.[0] as unknown as { model: string }).model).toBe(
       "claude-test",
     );
+  });
+
+  it("says the times are UTC when the browser sent no time zone", async () => {
+    const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
+    await collect(
+      streamAnswer({
+        ...CONTEXT,
+        timeZone: "UTC",
+        timeZoneFromBrowser: false,
+        question: "Q?",
+        history: [],
+        tools,
+        registry,
+        client,
+      }),
+    );
+    const params = toolRunner.mock.calls[0]?.[0] as unknown as {
+      messages: Array<{ content: string }>;
+    };
+    expect(params.messages.at(-1)?.content).toContain(
+      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
+    );
+  });
+
+  it("lists the skills in the cached system prompt", async () => {
+    const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
+    await collect(
+      streamAnswer({
+        ...CONTEXT,
+        skills: [SKILL],
+        question: "Q?",
+        history: [],
+        tools,
+        registry,
+        client,
+      }),
+    );
+    const params = toolRunner.mock.calls[0]?.[0] as unknown as { system: Array<{ text: string }> };
+    expect(params.system[0]?.text).toBe(systemPrompt([SKILL]));
+  });
+});
+
+describe("systemPrompt", () => {
+  it("has no skills section without skills", () => {
+    expect(systemPrompt([])).not.toContain("Skills:");
+    expect(systemPrompt([])).not.toContain("load_skill");
+  });
+
+  it("lists each skill and says to load it first", () => {
+    const prompt = systemPrompt([SKILL]);
+    expect(prompt).toContain(
+      "- organize-growth-hours: Organize the user's calendar time into growth hours.",
+    );
+    expect(prompt).toContain("call load_skill first");
+    expect(prompt).toContain("follows up on an earlier answer that used a skill");
+  });
+
+  it("is the same text for the same skills, so it stays cached", () => {
+    expect(systemPrompt([SKILL])).toBe(systemPrompt([{ ...SKILL }]));
+  });
+});
+
+describe("todayIn", () => {
+  it("gives the date and weekday in the user's zone", () => {
+    expect(todayIn("America/New_York", new Date("2026-11-21T03:00:00Z"))).toBe(
+      "2026-11-20 (Friday)",
+    );
+    expect(todayIn("UTC", new Date("2026-11-21T03:00:00Z"))).toBe("2026-11-21 (Saturday)");
   });
 });

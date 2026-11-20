@@ -62,7 +62,11 @@ src/
 │   ├── app-config.ts                    # APP_NAME / APP_DESCRIPTION / HR_CONTACT
 │   ├── chat/answer.ts                   # streamAnswer: Claude tool loop, [id] markers → citations
 │   ├── chat/markers.ts                  # Strips [p1]/[f1]/[m1]/[t1] markers from the stream, even split
-│   ├── chat/tools.ts                    # search_handbook + read-only Microsoft 365 tools
+│   ├── chat/tools.ts                    # search_handbook, load_skill, read-only Microsoft 365 tools
+│   ├── chat/calendar-tools.ts           # list_calendar_events + tally_hours (growth-hours skill)
+│   ├── chat/tally.ts                    # Hours per day per category, rounded, as plain lines
+│   ├── chat/skills.ts                   # Loads skills/*.md (frontmatter + instructions)
+│   ├── chat/tool-guard.ts               # guarded(): safe tool errors for Claude
 │   ├── chat/sources.ts                  # SourceRegistry: per-answer ids → citations and sources
 │   ├── chat/passages.ts                 # Passage type, PassageProvider (retrieve → re-rank)
 │   ├── chat-protocol.ts                 # /api/chat NDJSON events (Zod) + readChatStream
@@ -71,7 +75,7 @@ src/
 │   ├── chat/topic-check.ts              # Haiku classifier: topic id or off-topic
 │   ├── auth.ts                          # NextAuth config, isAllowedEmail, getCurrentUserEmail
 │   ├── graph-token.ts                   # Graph scopes, token refresh, getGraphAccessToken
-│   ├── graph/                           # Graph client (retries, safe errors), files, mail, Teams
+│   ├── graph/                           # Graph client (retries, safe errors), files, mail, Teams, calendar
 │   ├── e2e-bypass.ts                    # isAuthBypassed, E2E_USER_EMAIL
 │   └── validation.ts                    # Zod schemas for API input
 ├── knowledge/                           # Ingest pipeline (`pnpm ingest`)
@@ -90,6 +94,7 @@ src/
 ├── instrumentation-node.ts              # Telemetry, then migrations in production
 └── proxy.ts                             # Auth gate (Next 16 replaces middleware.ts)
 docs/knowledge/                          # Markdown the chat answers from (repo-markdown sources)
+skills/                                  # Chat skills: instructions Claude loads with load_skill
 drizzle/                                 # Generated SQL migrations (committed)
 e2e/                                     # Playwright specs, db reset helper, warm-up
 ```
@@ -168,7 +173,9 @@ Use the Ingage components before writing custom markup.
   `localStorage`) and sends at most `CHAT_HISTORY_MAX_TURNS` earlier turns.
 - **Chat answers (`src/lib/chat/`):** after the topic check, `streamAnswer` runs Claude
   (`CHAT_MODEL`, default `claude-haiku-5-5`; cached system prompt) through the SDK tool runner
-  (`stream: true`, `max_iterations: 8`) with `chatTools()`. Each passage or item a tool
+  (`stream: true`, `max_iterations: 10`) with `chatTools()`. The user message starts with
+  `<today>` and `<time_zone>` (the browser's zone, or UTC with a note), so the system prompt
+  (`systemPrompt(skills)`) stays cached. Each passage or item a tool
   returns is registered in a per-request `SourceRegistry` as `p1…`/`f1…`/`m1…`/`t1…`; Claude
   cites `[id]`, the markers are stripped from the stream, and registered ids become
   `citation` events (unknown ids are ignored). An answer citing none is `dont-know`; a run
@@ -190,6 +197,22 @@ Use the Ingage components before writing custom markup.
   setting (`m365Enabled()`, read on the server). Tool failures are logged with
   `describeError` and returned to Claude as `ToolError` messages, never raw error text.
   Locally the chat only knows what you've ingested: `pnpm ingest --source handbook`.
+- **Skills (`skills/*.md`, `src/lib/chat/skills.ts`):** a skill is a Markdown file with
+  `name`, `description`, and `requires` (`[m365]` or `[]`) frontmatter and instructions as the
+  body. The system prompt lists available skills by name and description; Claude calls
+  `load_skill` for the body. A skill is offered only when every tool group it requires is on.
+  `skills.test.ts` parses the real folder, so a broken skill fails CI. The Dockerfile copies
+  `skills/`. Add a skill by adding a file; no prompt or route change.
+- **Growth hours (`skills/organize-growth-hours.md`):** `list_calendar_events` reads
+  `/me/calendarView` (`Calendars.Read`) in the user's zone, up to 31 days and 200 events, skips
+  cancelled, declined, all-day, and free events, and registers the rest as `c1…` (not
+  citations). Claude picks a pillar per event from its title against the handbook's
+  definitions (`not-sure` when unclear); `tally_hours` sums hours in code, one line per day
+  per category rounded to 0.25, and Claude repeats the lines unchanged. Events over 12 h are
+  never counted ("Not sure", enter by hand); "Not sure" is one line per title, no hours. The
+  browser's zone is dropped (UTC fallback with a note), never a 400, when `Intl` can't use it.
+  `instrumentation-node.ts` loads the skills at startup and exits 1 on a broken skill file. Corrections re-list
+  the period and reuse the earlier answer's categories. Never log event titles.
 - **Graph (`src/lib/graph/`):** `graphRequest` retries 429/5xx up to 3 times, honours
   `Retry-After` up to 5 s, and throws `GraphError` with method, path (no query), status,
   and Graph's error code only. Searches use `POST /search/query` so search text never lands

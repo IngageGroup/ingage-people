@@ -17,7 +17,8 @@ export const KNOWLEDGE_TOPICS: ChatTopic[] = [
 export const WORK_TOPIC: ChatTopic = {
   id: "work",
   label: "Your work",
-  description: "your clients, projects, files, mail, and Teams messages.",
+  description:
+    "your clients, projects, files, mail, Teams messages, and calendar, including organizing your growth hours.",
 };
 
 const KNOWLEDGE_EXAMPLES = [
