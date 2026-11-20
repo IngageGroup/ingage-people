@@ -114,7 +114,9 @@ describe("Graph tokens in the session", () => {
       authorization: { params: { scope: string } };
     };
     const scopes = authorization.params.scope.split(" ");
-    expect(scopes).toEqual(expect.arrayContaining(["offline_access", "User.Read", "Mail.Read"]));
+    expect(scopes).toEqual(
+      expect.arrayContaining(["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]),
+    );
   });
 
   it("stores the tokens from the sign-in response", async () => {
