@@ -74,11 +74,9 @@ function userMessage(args: {
   question: string;
   today: string;
   timeZone: string;
-  timeZoneFromBrowser: boolean;
+  timeZoneKnown: boolean;
 }): string {
-  const zone = args.timeZoneFromBrowser
-    ? args.timeZone
-    : `${args.timeZone} (the browser sent no time zone)`;
+  const zone = args.timeZoneKnown ? args.timeZone : `${args.timeZone} (no time zone found)`;
   return `<today>${args.today}</today>\n<time_zone>${zone}</time_zone>\n<question>\n${args.question}\n</question>`;
 }
 
@@ -103,8 +101,8 @@ export async function* streamAnswer(args: {
   /** Today in the user's zone, from `todayIn`. */
   today: string;
   timeZone: string;
-  /** False when the browser sent no zone and `timeZone` is the UTC fallback. */
-  timeZoneFromBrowser: boolean;
+  /** False when no zone was found and `timeZone` is the UTC fallback. */
+  timeZoneKnown: boolean;
   skills: Skill[];
   tools: ReturnType<typeof chatTools>;
   registry: SourceRegistry;

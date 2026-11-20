@@ -115,7 +115,13 @@ describe("Graph tokens in the session", () => {
     };
     const scopes = authorization.params.scope.split(" ");
     expect(scopes).toEqual(
-      expect.arrayContaining(["offline_access", "User.Read", "Mail.Read", "Calendars.Read"]),
+      expect.arrayContaining([
+        "offline_access",
+        "User.Read",
+        "Mail.Read",
+        "Calendars.Read",
+        "MailboxSettings.Read",
+      ]),
     );
   });
 

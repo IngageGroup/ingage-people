@@ -7,10 +7,11 @@ import { chatClient } from "@/lib/chat/anthropic";
 import { getPassageProvider } from "@/lib/chat/passages";
 import { chatSkills } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
+import { resolveTimeZone } from "@/lib/chat/time-zone";
 import { chatTools } from "@/lib/chat/tools";
 import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
 import { type ChatEvent, type ChatOutcome, encodeChatEvent } from "@/lib/chat-protocol";
-import { searchTopics } from "@/lib/chat-topics";
+import { m365Enabled, searchTopics } from "@/lib/chat-topics";
 import { getGraphAccessToken } from "@/lib/graph-token";
 import { describeError } from "@/lib/safe-error";
 import { type ChatRequest, chatRequestSchema } from "@/lib/validation";
@@ -142,7 +143,11 @@ export async function POST(request: Request): Promise<Response> {
   if (topic === OFF_TOPIC) return ndjson(topic, offTopicReply);
 
   const { question, history } = parsed.data;
-  const timeZone = parsed.data.timeZone ?? "UTC";
+  const { timeZone, known } = await resolveTimeZone({
+    browserZone: parsed.data.timeZone,
+    m365: m365Enabled(),
+    graphToken: () => getGraphAccessToken(),
+  });
   const skills = chatSkills();
   // A fresh registry per request: citations can only point at what this answer's tools found.
   const registry = new SourceRegistry();
@@ -160,7 +165,7 @@ export async function POST(request: Request): Promise<Response> {
       history,
       today: todayIn(timeZone, new Date()),
       timeZone,
-      timeZoneFromBrowser: parsed.data.timeZone !== undefined,
+      timeZoneKnown: known,
       skills,
       tools,
       registry,

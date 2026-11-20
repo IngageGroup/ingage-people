@@ -218,6 +218,7 @@ export async function m365FixtureFetch(url: string, init: RequestInit): Promise<
   const path = url.startsWith(GRAPH_BASE) ? url.slice(GRAPH_BASE.length) : url;
   if (path === "/search/query") return search(init);
   if (path.startsWith("/me/calendarView")) return calendarView(url);
+  if (path === "/me/mailboxSettings/timeZone") return json({ value: "Eastern Standard Time" });
   const mailMatch = /^\/me\/messages\/([^?]+)/.exec(path);
   if (mailMatch?.[1]) return mail(decodeURIComponent(mailMatch[1]));
   if (path.startsWith(`/chats/${encodeURIComponent(CHAT_ID)}/messages`)) {

@@ -210,7 +210,10 @@ Use the Ingage components before writing custom markup.
   definitions (`not-sure` when unclear); `tally_hours` sums hours in code, one line per day
   per category rounded to 0.25, and Claude repeats the lines unchanged. Events over 12 h are
   never counted ("Not sure", enter by hand); "Not sure" is one line per title, no hours. The
-  browser's zone is dropped (UTC fallback with a note), never a 400, when `Intl` can't use it.
+  zone (`resolveTimeZone`, `src/lib/chat/time-zone.ts`) is the user's Outlook setting
+  (`MailboxSettings.Read`, Windows names mapped with `windows-iana`) when `M365_TOOLS` is on,
+  then the browser's, then UTC with a note; a failed Outlook read never fails the question. A
+  browser zone `Intl` can't use is dropped, never a 400.
   `instrumentation-node.ts` loads the skills at startup and exits 1 on a broken skill file. Corrections re-list
   the period and reuse the earlier answer's categories. Never log event titles.
 - **Graph (`src/lib/graph/`):** `graphRequest` retries 429/5xx up to 3 times, honours

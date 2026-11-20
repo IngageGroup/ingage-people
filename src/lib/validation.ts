@@ -14,7 +14,7 @@ const chatTurnSchema = z.object({
 });
 
 /** Any zone `Intl` can format in, including current IANA names its own list leaves out. */
-function isTimeZone(zone: string): boolean {
+export function isTimeZone(zone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone });
     return true;
