@@ -25,5 +25,5 @@ one QuickBooks line per day per category.
    change, round, or add up any numbers yourself. After the lines, say which events the
    listing skipped (declined, all-day, cancelled, or marked free), then the not-sure,
    under-a-quarter-hour, and overlap lines, and invite the user to correct any category.
-7. Cite the handbook passages you used for the definitions. If `<time_zone>` says the browser
-   sent no time zone, say that the times are in UTC.
+7. Cite the handbook passages you used for the definitions. If `<time_zone>` says no time zone
+   was found, say that the times are in UTC.
