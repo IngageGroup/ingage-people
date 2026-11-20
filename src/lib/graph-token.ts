@@ -16,6 +16,7 @@ export const GRAPH_SCOPES = [
   "Files.Read.All",
   "Sites.Read.All",
   "Mail.Read",
+  "Calendars.Read",
   "Chat.Read",
   "ChannelMessage.Read.All",
   "Team.ReadBasic.All",

@@ -364,14 +364,15 @@ permissions; nothing can send or change data.
 | `Files.Read.All` | Files the user can open in OneDrive and SharePoint |
 | `Sites.Read.All` | SharePoint sites and lists the user can open |
 | `Mail.Read` | The user's mailbox |
+| `Calendars.Read` | The user's calendar events |
 | `Chat.Read` | The user's Teams chats |
 | `ChannelMessage.Read.All` | Messages in Teams channels the user belongs to |
 | `Team.ReadBasic.All` | Names of the teams the user belongs to |
 
 ```bash
 GRAPH=00000003-0000-0000-c000-000000000000
-PERMS=(User.Read offline_access Files.Read.All Sites.Read.All Mail.Read Chat.Read
-  ChannelMessage.Read.All Team.ReadBasic.All)
+PERMS=(User.Read offline_access Files.Read.All Sites.Read.All Mail.Read Calendars.Read
+  Chat.Read ChannelMessage.Read.All Team.ReadBasic.All)
 ARGS=()
 for P in "${PERMS[@]}"; do
   ARGS+=("$(az ad sp show --id "$GRAPH" \
