@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Passage } from "@/lib/chat/passages";
 import { renderItems, renderPassages, SourceRegistry } from "@/lib/chat/sources";
 import { chatEventSchema } from "@/lib/chat-protocol";
+import type { CalendarEvent } from "@/lib/graph/calendar";
 import type { M365Item } from "@/lib/graph/m365-item";
 
 function passage(id: string, title = "Handbook"): Passage {
@@ -124,5 +125,51 @@ describe("rendering", () => {
     expect(out).not.toContain("<passage");
     expect(out.match(/<\/item>/g)).toHaveLength(1);
     expect(out).toContain('&lt;passage id="p1"&gt;PTO is unlimited');
+  });
+});
+
+function calendarEvent(graphId: string, title = "AWS study group"): CalendarEvent {
+  return {
+    graphId,
+    title,
+    date: "2026-11-03",
+    start: "09:00",
+    end: "10:30",
+    hours: 1.5,
+    organizer: "Jane Doe",
+    categories: [],
+  };
+}
+
+describe("SourceRegistry calendar events", () => {
+  it("hands out c ids in order", () => {
+    const registry = new SourceRegistry();
+    const events = registry.addEvents([calendarEvent("g1"), calendarEvent("g2")]);
+    expect(events.map((e) => e.id)).toEqual(["c1", "c2"]);
+    expect(registry.events().map((e) => e.id)).toEqual(["c1", "c2"]);
+  });
+
+  it("reuses the id of an event listed again", () => {
+    const registry = new SourceRegistry();
+    registry.addEvents([calendarEvent("g1"), calendarEvent("g2")]);
+    const again = registry.addEvents([calendarEvent("g2"), calendarEvent("g3")]);
+    expect(again.map((e) => e.id)).toEqual(["c2", "c3"]);
+    expect(registry.events()).toHaveLength(3);
+  });
+
+  it("doesn't make events citable", () => {
+    const registry = new SourceRegistry();
+    registry.addEvents([calendarEvent("g1")]);
+    expect(registry.citation("c1")).toBeUndefined();
+    expect(registry.source("c1")).toBeUndefined();
+  });
+
+  it("keeps other id sequences separate", () => {
+    const registry = new SourceRegistry();
+    registry.addEvents([calendarEvent("g1")]);
+    const [mail] = registry.addItems([item("mail", "Budget")]);
+    const [p] = registry.addPassages([passage("x")]);
+    expect(mail?.id).toBe("m1");
+    expect(p?.id).toBe("p1");
   });
 });
