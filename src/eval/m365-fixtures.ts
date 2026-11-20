@@ -119,6 +119,97 @@ function mail(id: string): Response {
   });
 }
 
+interface FixtureEvent {
+  id: string;
+  subject: string;
+  /** Local wall-clock times in America/New_York (EST, UTC-5, in November). */
+  start: string;
+  end: string;
+  response?: "accepted" | "declined" | "organizer";
+  isAllDay?: boolean;
+  isCancelled?: boolean;
+}
+
+/** The week of 2026-11-09: "last week" for the eval's fixed today, 2026-11-20. */
+const CALENDAR: FixtureEvent[] = [
+  {
+    id: "ev-acme",
+    subject: "Acme sprint review",
+    start: "2026-11-10T09:00",
+    end: "2026-11-10T10:00",
+  },
+  { id: "ev-aws", subject: "AWS study group", start: "2026-11-10T13:00", end: "2026-11-10T14:30" },
+  {
+    id: "ev-vendor",
+    subject: "Vendor demo",
+    start: "2026-11-10T15:00",
+    end: "2026-11-10T16:00",
+    response: "declined",
+  },
+  {
+    id: "ev-pto",
+    subject: "PTO",
+    start: "2026-11-11T00:00",
+    end: "2026-11-12T00:00",
+    isAllDay: true,
+  },
+  {
+    id: "ev-lunch",
+    subject: "Lunch and learn: testing",
+    start: "2026-11-11T12:00",
+    end: "2026-11-11T13:00",
+  },
+  {
+    id: "ev-onboarding",
+    subject: "Onboarding Experience Team",
+    start: "2026-11-12T10:00",
+    end: "2026-11-12T11:00",
+  },
+  {
+    id: "ev-offsite",
+    subject: "Team offsite planning",
+    start: "2026-11-12T13:00",
+    end: "2026-11-12T16:00",
+  },
+  {
+    id: "ev-book",
+    subject: "Book club",
+    start: "2026-11-12T17:00",
+    end: "2026-11-12T18:00",
+    isCancelled: true,
+  },
+  {
+    id: "ev-foodbank",
+    subject: "Food bank volunteering",
+    start: "2026-11-13T09:00",
+    end: "2026-11-13T12:00",
+  },
+];
+
+const EST_OFFSET = "-05:00";
+
+function calendarView(url: string): Response {
+  const params = new URL(url).searchParams;
+  const from = Date.parse(params.get("startDateTime") ?? "");
+  const to = Date.parse(params.get("endDateTime") ?? "");
+  const value = CALENDAR.filter((event) => {
+    const start = Date.parse(`${event.start}:00${EST_OFFSET}`);
+    return start >= from && start < to;
+  }).map((event) => ({
+    id: event.id,
+    subject: event.subject,
+    start: { dateTime: `${event.start}:00.0000000`, timeZone: "America/New_York" },
+    end: { dateTime: `${event.end}:00.0000000`, timeZone: "America/New_York" },
+    isAllDay: event.isAllDay ?? false,
+    isCancelled: event.isCancelled ?? false,
+    showAs: "busy",
+    responseStatus: { response: event.response ?? "accepted" },
+    organizer: { emailAddress: { name: "Eval User" } },
+    categories: [],
+  }));
+  return json({ value });
+}
+
 /** `fetch` for the eval's Microsoft 365 cases: answers the Graph calls the chat's tools make. */
 export async function m365FixtureFetch(url: string, init: RequestInit): Promise<Response> {
   if (new Headers(init.headers).get("authorization") !== `Bearer ${M365_FIXTURE_TOKEN}`) {
@@ -126,6 +217,7 @@ export async function m365FixtureFetch(url: string, init: RequestInit): Promise<
   }
   const path = url.startsWith(GRAPH_BASE) ? url.slice(GRAPH_BASE.length) : url;
   if (path === "/search/query") return search(init);
+  if (path.startsWith("/me/calendarView")) return calendarView(url);
   const mailMatch = /^\/me\/messages\/([^?]+)/.exec(path);
   if (mailMatch?.[1]) return mail(decodeURIComponent(mailMatch[1]));
   if (path.startsWith(`/chats/${encodeURIComponent(CHAT_ID)}/messages`)) {

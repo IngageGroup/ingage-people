@@ -42,7 +42,7 @@ function graphAccess(m365: boolean): Pick<ChatToolDeps, "graphToken" | "fetchFn"
 /** Runs one case through the same steps as /api/chat, keeping what each step returned. */
 async function runCase(evalCase: EvalCase, m365: boolean): Promise<CaseResult> {
   const client = chatClient();
-  const request = { question: evalCase.question, history: [] };
+  const request = { question: evalCase.question, history: evalCase.history };
   const topic = await checkTopic({ ...request, client }).catch(() => null);
 
   // Search runs for every case so the threshold sweep sees off-topic questions too.

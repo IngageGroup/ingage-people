@@ -131,11 +131,12 @@ The user picked **A**.
 - Events listed by `list_calendar_events` in this answer but left out of `assignments` are
   added to "Not sure" automatically, so none drop out and no retry turn is spent.
   *(Settled in review.)*
-- Sums hours per date per category, rounds each line to the nearest 0.25, and returns a
-  Markdown table (date, category, hours, event titles) sorted by date then category, plus a
+- Sums hours per date per category, rounds each line to the nearest 0.25, and returns plain
+  lines (`2026-11-03 (Tue) | Personal Growth | 2.25 h | AWS study group; Tech talk`), since the
+  chat shows answers as plain text, sorted by date then category, plus a
   total per category, plus the "Not sure" events listed without hours. Overlapping events are
   each counted, and the result notes the overlap so Claude can point it out.
-- Claude copies this table into the answer; the skill tells it not to change the numbers.
+- Claude copies these lines into the answer; the skill tells it not to change the numbers.
 - Citations: the answer cites the handbook passages it used for the definitions. Events are
   named in the table's titles column rather than cited one by one, since `[id]` markers are
   stripped from the text and a month would put 40+ event citations in the flat list under the
@@ -171,8 +172,8 @@ these questions off-topic. No new topic.
 
 ### UI
 
-None beyond rendering the Markdown table the answer already contains. If the chat's answer
-renderer doesn't render tables, that is a builder task (check `ChatPanel`).
+None. The answer is plain lines, which the chat already shows as written. The chat page
+sends the browser's time zone with each question.
 
 ### Testing and eval
 
