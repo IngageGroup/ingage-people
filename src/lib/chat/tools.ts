@@ -1,15 +1,16 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { ToolError } from "@anthropic-ai/sdk/lib/tools/ToolError";
 import { z } from "zod";
+import { calendarTools } from "@/lib/chat/calendar-tools";
 import type { PassageProvider } from "@/lib/chat/passages";
+import type { Skill } from "@/lib/chat/skills";
 import { renderItems, renderPassages, type SourceRegistry } from "@/lib/chat/sources";
-import { type FetchFn, GraphError } from "@/lib/graph/client";
+import { guarded } from "@/lib/chat/tool-guard";
+import type { FetchFn } from "@/lib/graph/client";
 import { readFile, searchFiles } from "@/lib/graph/files";
 import type { M365Item } from "@/lib/graph/m365-item";
 import { readMail, searchMail } from "@/lib/graph/mail";
 import { readTeamsThread, searchTeams } from "@/lib/graph/teams";
-import { GraphTokenError } from "@/lib/graph-token";
-import { describeError } from "@/lib/safe-error";
 
 export interface ChatToolDeps {
   registry: SourceRegistry;
@@ -19,6 +20,10 @@ export interface ChatToolDeps {
   /** The signed-in user's Graph token; called only when a Microsoft 365 tool runs. */
   graphToken: () => Promise<string>;
   fetchFn?: FetchFn;
+  /** IANA zone for calendar times. */
+  timeZone: string;
+  /** Skills `load_skill` can return; the tool is left out when there are none. */
+  skills: Skill[];
 }
 
 const queryInput = z.object({
@@ -27,36 +32,6 @@ const queryInput = z.object({
 const refInput = z.object({
   ref: z.string().min(1).max(500).describe("The ref attribute of an item from a search result."),
 });
-
-/** What Claude is told when a tool fails; never Graph's or the database's own message. */
-function failureMessage(err: unknown): string {
-  if (err instanceof GraphTokenError) {
-    return err.reason === "unavailable"
-      ? "Microsoft 365 isn't available in this session."
-      : "Microsoft 365 sign-in has expired; ask the user to sign in again.";
-  }
-  if (err instanceof GraphError) {
-    if (err.failure === "forbidden" || err.failure === "not-found") {
-      return "That item can't be opened with your access.";
-    }
-    if (err.failure === "throttled" || err.failure === "unavailable") {
-      return "Microsoft 365 is busy; try again shortly.";
-    }
-  }
-  return "The search failed; try again.";
-}
-
-/** Runs a tool body; failures are logged without content and returned to Claude as errors. */
-async function guarded(name: string, body: () => Promise<string>): Promise<string> {
-  try {
-    return await body();
-  } catch (err) {
-    if (!(err instanceof GraphTokenError && err.reason === "unavailable")) {
-      console.error(`[chat-tools] ${name} failed: ${describeError(err)}`);
-    }
-    throw new ToolError(failureMessage(err));
-  }
-}
 
 function itemsResult(registry: SourceRegistry, items: M365Item[], none: string): string {
   return items.length ? renderItems(registry.addItems(items)) : none;
@@ -74,6 +49,20 @@ function handbookTool(deps: ChatToolDeps) {
         if (!passages.length) return "No handbook passages matched.";
         return renderPassages(deps.registry.addPassages(passages));
       }),
+  });
+}
+
+function skillTool(skills: Skill[]) {
+  const names = skills.map((skill) => skill.name).join(", ");
+  return betaZodTool({
+    name: "load_skill",
+    description: `Load the instructions for a skill by name. Available: ${names}.`,
+    inputSchema: z.object({ name: z.string().min(1).max(64) }),
+    run: async ({ name }) => {
+      const skill = skills.find((s) => s.name === name);
+      if (!skill) throw new ToolError(`No skill named ${name}. Available: ${names}`);
+      return skill.body;
+    },
   });
 }
 
@@ -131,10 +120,15 @@ function m365Tools(deps: ChatToolDeps) {
 }
 
 /**
- * The chat's tools: `search_handbook` always, and the read-only Microsoft 365 tools when
- * `M365_TOOLS=enabled` (dev only until the retention decision in #2).
+ * The chat's tools: `search_handbook` always, `load_skill` when skills are offered, and the
+ * read-only Microsoft 365 and calendar tools when `M365_TOOLS=enabled` (dev only until the
+ * retention decision in #2).
  */
 export function chatTools(deps: ChatToolDeps) {
-  const m365 = process.env["M365_TOOLS"] === "enabled" ? m365Tools(deps) : [];
-  return [handbookTool(deps), ...m365];
+  const m365 = process.env["M365_TOOLS"] === "enabled";
+  return [
+    handbookTool(deps),
+    ...(deps.skills.length ? [skillTool(deps.skills)] : []),
+    ...(m365 ? [...m365Tools(deps), ...calendarTools(deps)] : []),
+  ];
 }

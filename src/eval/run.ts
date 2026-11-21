@@ -18,6 +18,7 @@ import type { RerankResult } from "@/knowledge/voyage";
 import { streamAnswer } from "@/lib/chat/answer";
 import { chatClient } from "@/lib/chat/anthropic";
 import { chatSearch } from "@/lib/chat/passages";
+import { chatSkills } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
 import { type ChatToolDeps, chatTools } from "@/lib/chat/tools";
 import { checkTopic, OFF_TOPIC, offTopicAnswer } from "@/lib/chat/topic-check";
@@ -26,6 +27,10 @@ import { GraphTokenError } from "@/lib/graph-token";
 
 const THRESHOLDS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
 const CONCURRENCY = 4;
+
+/** Fixed so relative periods ("last week") hit the fixture calendar week of 2026-11-09. */
+const EVAL_TODAY = "2026-11-20 (Friday)";
+const EVAL_TIME_ZONE = "America/New_York";
 
 /** Graph access for the chat's tools: the made-up fixtures in M365 mode, none otherwise. */
 function graphAccess(m365: boolean): Pick<ChatToolDeps, "graphToken" | "fetchFn"> {
@@ -37,7 +42,7 @@ function graphAccess(m365: boolean): Pick<ChatToolDeps, "graphToken" | "fetchFn"
 /** Runs one case through the same steps as /api/chat, keeping what each step returned. */
 async function runCase(evalCase: EvalCase, m365: boolean): Promise<CaseResult> {
   const client = chatClient();
-  const request = { question: evalCase.question, history: [] };
+  const request = { question: evalCase.question, history: evalCase.history };
   const topic = await checkTopic({ ...request, client }).catch(() => null);
 
   // Search runs for every case so the threshold sweep sees off-topic questions too.
@@ -64,13 +69,22 @@ async function runCase(evalCase: EvalCase, m365: boolean): Promise<CaseResult> {
     // The agent's handbook search returns the passages selected above, so the answer and the
     // retrieval metrics see the same passages.
     const registry = new SourceRegistry();
+    const skills = chatSkills();
     const tools = chatTools({
       registry,
       passages: async () => passages,
       handbookTopics: searchTopics(topic),
       ...graphAccess(m365),
+      timeZone: EVAL_TIME_ZONE,
+      skills,
     });
-    for await (const event of streamAnswer({ ...request, tools, registry, client })) {
+    const context = {
+      today: EVAL_TODAY,
+      timeZone: EVAL_TIME_ZONE,
+      timeZoneFromBrowser: true,
+      skills,
+    };
+    for await (const event of streamAnswer({ ...request, ...context, tools, registry, client })) {
       if (event.type === "delta") answer += event.text;
       if (event.type === "citation") citedQuotes.push(event.citation.quote);
       if (event.type === "done") outcome = event.outcome;

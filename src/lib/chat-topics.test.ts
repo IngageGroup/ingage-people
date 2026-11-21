@@ -52,3 +52,12 @@ describe("Microsoft 365 topics", () => {
     expect(searchTopics("work")).toEqual(["handbook"]);
   });
 });
+
+describe("work topic", () => {
+  it("covers the calendar and growth hours, so the topic check keeps those questions", () => {
+    vi.stubEnv("M365_TOOLS", "enabled");
+    const work = chatTopics().find((topic) => topic.id === "work");
+    expect(work?.description).toContain("calendar");
+    expect(work?.description).toContain("growth hours");
+  });
+});

@@ -1,6 +1,7 @@
 import { ToolError } from "@anthropic-ai/sdk/lib/tools/ToolError";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Passage } from "@/lib/chat/passages";
+import type { Skill } from "@/lib/chat/skills";
 import { SourceRegistry } from "@/lib/chat/sources";
 import { chatTools } from "@/lib/chat/tools";
 import { GraphTokenError } from "@/lib/graph-token";
@@ -38,7 +39,16 @@ const mailHits = {
 
 type ChatTool = ReturnType<typeof chatTools>[number];
 
-function setup(overrides: { graphToken?: () => Promise<string>; fetchStatus?: number } = {}) {
+const SKILL: Skill = {
+  name: "organize-growth-hours",
+  description: "Organize growth hours.",
+  requires: ["m365"],
+  body: "Step one.",
+};
+
+function setup(
+  overrides: { graphToken?: () => Promise<string>; fetchStatus?: number; skills?: Skill[] } = {},
+) {
   const registry = new SourceRegistry();
   const passages = vi.fn(async (_q: string, _topics: string[]) => [PASSAGE]);
   const graphToken = vi.fn(overrides.graphToken ?? (async () => "user-token"));
@@ -54,6 +64,8 @@ function setup(overrides: { graphToken?: () => Promise<string>; fetchStatus?: nu
     handbookTopics: ["handbook"],
     graphToken,
     fetchFn,
+    timeZone: "America/New_York",
+    skills: overrides.skills ?? [SKILL],
   });
   const run = (name: string, input: Record<string, string>) => {
     const tool = tools.find((t) => t.name === name);
@@ -75,21 +87,38 @@ afterEach(() => {
 });
 
 describe("chatTools", () => {
-  it("offers the handbook search and the six Microsoft 365 tools", () => {
+  it("offers the handbook search, skills, and the Microsoft 365 and calendar tools", () => {
     expect(setup().tools.map((t) => t.name)).toEqual([
       "search_handbook",
+      "load_skill",
       "search_files",
       "read_file",
       "search_mail",
       "read_mail",
       "search_teams",
       "read_teams_thread",
+      "list_calendar_events",
+      "tally_hours",
     ]);
   });
 
   it("offers only the handbook search unless M365_TOOLS is enabled", () => {
     vi.stubEnv("M365_TOOLS", "");
-    expect(setup().tools.map((t) => t.name)).toEqual(["search_handbook"]);
+    expect(setup({ skills: [] }).tools.map((t) => t.name)).toEqual(["search_handbook"]);
+  });
+
+  it("leaves out load_skill when there are no skills", () => {
+    expect(setup({ skills: [] }).tools.map((t) => t.name)).not.toContain("load_skill");
+  });
+
+  it("loads a skill's instructions by name", async () => {
+    expect(await setup().run("load_skill", { name: "organize-growth-hours" })).toBe("Step one.");
+  });
+
+  it("names the available skills when asked for an unknown one", async () => {
+    await expect(Promise.resolve(setup().run("load_skill", { name: "x" }))).rejects.toMatchObject({
+      content: "No skill named x. Available: organize-growth-hours",
+    });
   });
 
   it("searches the handbook topics and registers the passages without a Graph token", async () => {

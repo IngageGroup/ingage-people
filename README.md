@@ -403,6 +403,11 @@ the user signs in again. The tokens make the cookie about 5–9 KB, which Auth.j
 two or three cookies. Sessions from before the app stored Graph tokens end once, so everyone
 signs in again after this deploys.
 
+Adding a permission (for example `Calendars.Read`, which the growth-hours skill needs) works
+the same way: add it to the registration, grant admin consent again, and users sign out and
+back in to get a token that includes it. Until they do, calendar calls fail with Graph 403
+and the chat says the item can't be opened with their access.
+
 ### 6.8 Container Apps environment
 
 ```bash
