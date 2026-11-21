@@ -159,29 +159,38 @@ test.describe("Chat", () => {
     await expect(page.getByText("Try again in a minute.")).toBeVisible();
   });
 
-  test("sends earlier turns with a follow-up question", async ({ page }) => {
-    const bodies: unknown[] = [];
-    await mockChat(page, (route) => {
-      bodies.push(route.request().postDataJSON());
-      return fulfillEvents(route, ANSWERED);
-    });
-    await page.goto("/");
-    await askQuestion(page, "What is the training budget?");
-    await expect(page.getByText("training budget of $2,000.")).toBeVisible();
-    await askQuestion(page, "Does it roll over?");
-    await expect(page.getByText("Does it roll over?")).toBeVisible();
-    await expect.poll(() => bodies.length).toBe(2);
+  test.describe("in the browser's time zone", () => {
+    test.use({ timezoneId: "America/Chicago" });
 
-    expect(bodies[0]).toEqual({ question: "What is the training budget?", history: [] });
-    expect(bodies[1]).toEqual({
-      question: "Does it roll over?",
-      history: [
-        { role: "user", content: "What is the training budget?" },
-        {
-          role: "assistant",
-          content: "Each employee has an annual training budget of $2,000. [1]",
-        },
-      ],
+    test("sends earlier turns with a follow-up question", async ({ page }) => {
+      const bodies: unknown[] = [];
+      await mockChat(page, (route) => {
+        bodies.push(route.request().postDataJSON());
+        return fulfillEvents(route, ANSWERED);
+      });
+      await page.goto("/");
+      await askQuestion(page, "What is the training budget?");
+      await expect(page.getByText("training budget of $2,000.")).toBeVisible();
+      await askQuestion(page, "Does it roll over?");
+      await expect(page.getByText("Does it roll over?")).toBeVisible();
+      await expect.poll(() => bodies.length).toBe(2);
+
+      expect(bodies[0]).toEqual({
+        question: "What is the training budget?",
+        history: [],
+        timeZone: "America/Chicago",
+      });
+      expect(bodies[1]).toEqual({
+        question: "Does it roll over?",
+        timeZone: "America/Chicago",
+        history: [
+          { role: "user", content: "What is the training budget?" },
+          {
+            role: "assistant",
+            content: "Each employee has an annual training budget of $2,000. [1]",
+          },
+        ],
+      });
     });
   });
 
