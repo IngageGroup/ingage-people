@@ -81,7 +81,7 @@ async function runCase(evalCase: EvalCase, m365: boolean): Promise<CaseResult> {
     const context = {
       today: EVAL_TODAY,
       timeZone: EVAL_TIME_ZONE,
-      timeZoneFromBrowser: true,
+      timeZoneKnown: true,
       skills,
     };
     for await (const event of streamAnswer({ ...request, ...context, tools, registry, client })) {

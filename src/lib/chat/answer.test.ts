@@ -19,7 +19,7 @@ const PASSAGE: Passage = {
 const CONTEXT = {
   today: "2026-11-20 (Friday)",
   timeZone: "America/New_York",
-  timeZoneFromBrowser: true,
+  timeZoneKnown: true,
   skills: [] as Skill[],
 };
 
@@ -253,13 +253,13 @@ describe("streamAnswer", () => {
     );
   });
 
-  it("says the times are UTC when the browser sent no time zone", async () => {
+  it("says the times are UTC when no time zone was found", async () => {
     const { client, tools, registry, toolRunner } = setup([{ chunks: ["Hi."] }]);
     await collect(
       streamAnswer({
         ...CONTEXT,
         timeZone: "UTC",
-        timeZoneFromBrowser: false,
+        timeZoneKnown: false,
         question: "Q?",
         history: [],
         tools,
@@ -271,7 +271,7 @@ describe("streamAnswer", () => {
       messages: Array<{ content: string }>;
     };
     expect(params.messages.at(-1)?.content).toContain(
-      "<time_zone>UTC (the browser sent no time zone)</time_zone>",
+      "<time_zone>UTC (no time zone found)</time_zone>",
     );
   });
 

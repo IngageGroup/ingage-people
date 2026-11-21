@@ -365,6 +365,7 @@ permissions; nothing can send or change data.
 | `Sites.Read.All` | SharePoint sites and lists the user can open |
 | `Mail.Read` | The user's mailbox |
 | `Calendars.Read` | The user's calendar events |
+| `MailboxSettings.Read` | The user's Outlook settings (only the time zone is read) |
 | `Chat.Read` | The user's Teams chats |
 | `ChannelMessage.Read.All` | Messages in Teams channels the user belongs to |
 | `Team.ReadBasic.All` | Names of the teams the user belongs to |
@@ -372,7 +373,7 @@ permissions; nothing can send or change data.
 ```bash
 GRAPH=00000003-0000-0000-c000-000000000000
 PERMS=(User.Read offline_access Files.Read.All Sites.Read.All Mail.Read Calendars.Read
-  Chat.Read ChannelMessage.Read.All Team.ReadBasic.All)
+  MailboxSettings.Read Chat.Read ChannelMessage.Read.All Team.ReadBasic.All)
 ARGS=()
 for P in "${PERMS[@]}"; do
   ARGS+=("$(az ad sp show --id "$GRAPH" \
