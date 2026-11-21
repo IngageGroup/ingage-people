@@ -264,7 +264,9 @@ Use the Ingage components before writing custom markup.
   id; upstream messages are dropped. Throw `SafeError` when the message helps operators and
   holds no user content. Create Claude clients for chat with `chatClient()` (log level pinned
   to "warn"). Azure Monitor options live in `src/lib/telemetry.ts` (no Postgres parameter
-  values, no console capture). Manual check: README 10.1.
+  values, no console capture). `telemetry-export.test.ts` runs the real Azure exporter on a
+  sign-in callback span and fails if its query string (the auth code) would be sent.
+  Manual check: README 10.1.
 - **Eval (`src/eval/`, `evals/handbook.jsonl`, `evals/m365.jsonl`):** `pnpm eval` runs every
   case through the chat's own steps (`checkTopic`, `chatSearch` + `selectPassages`, the agent
   in `streamAnswer`), judges
